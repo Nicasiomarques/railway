@@ -15,6 +15,13 @@
       "when": 1791038365046,
       "tag": "0001_simple_morlocks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791039883241,
+      "tag": "0002_fearless_pandemic",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "variables_instance_key_idx" ON "variables" USING btree ("service_instance_id","key");

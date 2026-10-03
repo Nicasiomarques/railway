@@ -6,13 +6,14 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db": "drizzle-kit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "start": "node --env-file-if-exists=.env dist/index.js"
   },
   "dependencies": {
     "@railway-like/shared": "workspace:*",

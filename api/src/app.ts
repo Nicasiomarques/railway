@@ -8,8 +8,10 @@ import { projectRoutes } from "./routes/projects.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { serviceRoutes } from "./routes/services.js";
 import { connectionRoutes } from "./routes/connections.js";
+import { variableRoutes } from "./routes/variables.js";
+import type { Keyring } from "./crypto/envelope.js";
 
-export function buildApp(db: Db, opts: { logger?: boolean } = {}) {
+export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean }) {
   const app = Fastify({ logger: opts.logger ?? false });
 
   app.get("/health", async () => ({ status: "ok" }));
@@ -23,6 +25,7 @@ export function buildApp(db: Db, opts: { logger?: boolean } = {}) {
       await v1.register(environmentRoutes, { db });
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
+      await v1.register(variableRoutes, { db, keyring: opts.keyring });
     },
     { prefix: "/v1" },
   );

@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { ApiError } from "./errors.js";
 import type { Db } from "./db/client.js";
-import { memberships, projects } from "./db/schema.js";
+import { memberships, projects, serviceInstances, services } from "./db/schema.js";
 
 export type Role = "owner" | "admin" | "member" | "viewer";
 
@@ -32,6 +32,34 @@ export async function requireProjectAccess(
     .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
     .limit(1);
   if (!row) throw new ApiError(404, "project_not_found", "Projeto não encontrado.");
+  if (opts.write && row.role === "viewer") {
+    throw new ApiError(403, "forbidden", "Papel 'viewer' não pode alterar este recurso.");
+  }
+  return row;
+}
+
+export async function requireInstanceAccess(
+  db: Db,
+  userId: string,
+  instanceId: string,
+  opts: { write?: boolean } = {},
+): Promise<{ organizationId: string; projectId: string; role: Role }> {
+  const [row] = await db
+    .select({
+      organizationId: projects.organizationId,
+      projectId: projects.id,
+      role: memberships.role,
+    })
+    .from(serviceInstances)
+    .innerJoin(services, eq(services.id, serviceInstances.serviceId))
+    .innerJoin(projects, eq(projects.id, services.projectId))
+    .innerJoin(
+      memberships,
+      and(eq(memberships.organizationId, projects.organizationId), eq(memberships.userId, userId)),
+    )
+    .where(and(eq(serviceInstances.id, instanceId), isNull(serviceInstances.deletedAt), isNull(services.deletedAt)))
+    .limit(1);
+  if (!row) throw new ApiError(404, "instance_not_found", "Instância não encontrada.");
   if (opts.write && row.role === "viewer") {
     throw new ApiError(403, "forbidden", "Papel 'viewer' não pode alterar este recurso.");
   }

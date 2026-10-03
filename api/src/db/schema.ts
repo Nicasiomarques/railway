@@ -220,7 +220,11 @@ export const variables = pgTable(
     version: integer("version").notNull().default(1),
     ...timestamps,
   },
-  (t) => [index("variables_scope_key_idx").on(t.scope, t.key)],
+  (t) => [
+    index("variables_scope_key_idx").on(t.scope, t.key),
+    // NULLs não colidem: linhas de outros escopos não afetam esta unicidade.
+    uniqueIndex("variables_instance_key_idx").on(t.serviceInstanceId, t.key),
+  ],
 );
 
 export const domains = pgTable(

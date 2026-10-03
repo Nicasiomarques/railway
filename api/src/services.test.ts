@@ -1,11 +1,12 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { testKeyring } from "./crypto/testing.js";
 import { db } from "./db/client.js";
 import { createUserWithToken } from "./db/fixtures.js";
 import { memberships } from "./db/schema.js";
 
-const app = buildApp(db);
+const app = buildApp(db, { keyring: testKeyring() });
 
 beforeEach(async () => {
   const { rows } = await db.execute<{ tablename: string }>(
