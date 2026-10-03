@@ -79,3 +79,13 @@ export type Deployment = {
 export type DeploymentDetail = Deployment & {
   events: { fromStatus: DeploymentStatus | null; toStatus: DeploymentStatus; reason: string | null; occurredAt: string }[];
 };
+
+// Lista de GET /services/{instanceId}/variables: só variáveis da própria instância
+// (a API ainda não resolve herança de ambiente/projeto nesta rota). `value` vem null quando isSecret.
+export type Variable = {
+  key: string;
+  isSecret: boolean;
+  version: number;
+  updatedAt: string;
+  value: string | null;
+};
