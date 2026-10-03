@@ -61,6 +61,64 @@ export async function apiRequest<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+// Consumes a `text/event-stream` response line by line, calling `onLine` for each `data: <line>`
+// payload as it arrives (no buffering until the end — this is a live tail). Errors are reported
+// the same way as `apiRequest` (including problem+json parsing when the response isn't SSE at all).
+// `signal` lets the caller abort the connection (e.g. on SIGINT) without it surfacing as an error.
+export async function streamLines(
+  cfg: ApiClientConfig,
+  path: string,
+  onLine: (line: string) => void,
+  options: RequestOptions & { signal?: AbortSignal } = {},
+): Promise<void> {
+  const url = new URL(`/v1${path}`, cfg.apiUrl);
+  for (const [key, value] of Object.entries(options.query ?? {})) {
+    if (value !== undefined) url.searchParams.set(key, String(value));
+  }
+
+  const headers = new Headers({ authorization: `Bearer ${cfg.token}` });
+
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "GET", headers, signal: options.signal });
+  } catch (err) {
+    if (options.signal?.aborted) return;
+    throw new ApiProblem(
+      0,
+      "network_error",
+      `Could not reach the API at ${cfg.apiUrl}: ${(err as Error).message}`,
+    );
+  }
+
+  if (!res.ok) throw await toApiProblem(res);
+  if (!res.body) return;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary: number;
+      while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+        const rawEvent = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        for (const fieldLine of rawEvent.split("\n")) {
+          if (fieldLine.startsWith("data: ")) onLine(fieldLine.slice(6));
+          else if (fieldLine.startsWith("data:")) onLine(fieldLine.slice(5));
+        }
+      }
+    }
+  } catch (err) {
+    if (!options.signal?.aborted) throw err;
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
 async function toApiProblem(res: Response): Promise<ApiProblem> {
   let body: ProblemBody = {};
   try {

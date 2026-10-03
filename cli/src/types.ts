@@ -69,5 +69,20 @@ export type VariableListItem = {
   value: string | null;
 };
 
+export type BuildLog = {
+  content: string;
+  updatedAt: string | null;
+};
+
+export type Domain = {
+  id: string;
+  serviceInstanceId: string;
+  hostname: string;
+  type: "auto" | "custom";
+  tlsState: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Page<T> = { data: T[]; nextCursor: string | null };
 export type ListOf<T> = { data: T[] };
