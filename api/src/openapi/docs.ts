@@ -3,13 +3,13 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { FastifyPluginAsync } from "fastify";
 
-// Documentação interativa com Stoplight Elements, lendo /openapi.json.
-// Servimos só os dois arquivos do bundle: o pacote inteiro não deve ficar exposto.
+// Interactive documentation with Stoplight Elements, reading /openapi.json.
+// We only serve the two bundle files: the whole package should not be exposed.
 const require = createRequire(import.meta.url);
 const elementsDir = dirname(require.resolve("@stoplight/elements"));
 
 const PAGE = `<!doctype html>
-<html lang="pt-BR">
+<html lang="en-US">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

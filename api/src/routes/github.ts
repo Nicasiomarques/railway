@@ -14,16 +14,16 @@ import {
   type GitHubInstallationTokenClient,
 } from "../github/clients.js";
 
-// O corpo bruto é preservado pelo content-type parser abaixo (escopado a este plugin, não afeta
-// as demais rotas): a verificação HMAC precisa dos bytes exatos que o GitHub assinou, e o Fastify
-// por padrão só entrega o JSON já desserializado.
+// The raw body is preserved by the content-type parser below (scoped to this plugin, doesn't
+// affect the other routes): the HMAC check needs the exact bytes GitHub signed, and Fastify by
+// default only hands over the already-deserialized JSON.
 declare module "fastify" {
   interface FastifyRequest {
     rawBody?: Buffer;
   }
 }
 
-// Violação da PK de delivery_id: delivery repetida, já processada antes.
+// delivery_id PK violation: a repeated delivery, already processed before.
 const DELIVERY_CONSTRAINT = "github_webhook_deliveries_pkey";
 
 function verifySignature(secret: string, rawBody: Buffer, header: unknown): boolean {
@@ -31,12 +31,12 @@ function verifySignature(secret: string, rawBody: Buffer, header: unknown): bool
   const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
   const expectedBuf = Buffer.from(expected, "utf8");
   const providedBuf = Buffer.from(header.slice("sha256=".length), "utf8");
-  // Comprimentos diferentes: timingSafeEqual lançaria em vez de devolver false.
+  // Different lengths: timingSafeEqual would throw instead of returning false.
   if (expectedBuf.length !== providedBuf.length) return false;
   return timingSafeEqual(expectedBuf, providedBuf);
 }
 
-// Converte o glob de `environments.branch_rule` (ex.: "feature/*") num regex de match completo.
+// Converts the `environments.branch_rule` glob (e.g. "feature/*") into a full-match regex.
 function matchesBranch(glob: string, branch: string): boolean {
   const pattern = `^${glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`;
   return new RegExp(pattern).test(branch);
@@ -49,8 +49,8 @@ type PushOutcome = {
   cancelled: { id: string; serviceInstanceId: string }[];
 };
 
-// architecture.md §5.2, passos 1-3: resolve as ServiceInstances cujo repo e branch casam com o
-// push, e cria um Deployment(Queued) em cada uma (cancelando o que estava em voo).
+// architecture.md §5.2, steps 1-3: resolves the ServiceInstances whose repo and branch match the
+// push, and creates a Deployment(Queued) for each one (cancelling whatever was in flight).
 async function handlePush(tx: Tx, keyring: Keyring, payload: Record<string, unknown>): Promise<PushOutcome> {
   const repo = payload.repository as { id?: number } | undefined;
   const after = typeof payload.after === "string" ? payload.after : undefined;
@@ -62,7 +62,7 @@ async function handlePush(tx: Tx, keyring: Keyring, payload: Record<string, unkn
   const installationId = installation?.id != null ? BigInt(installation.id) : null;
   const branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
 
-  // Push de remoção de branch (`after` todo zero): nada para implantar.
+  // Branch-deletion push (`after` is all zeros): nothing to deploy.
   if (/^0+$/.test(after)) return { installationId, repoId, created: [], cancelled: [] };
 
   const headCommit = payload.head_commit as { author?: { name?: string; username?: string } } | undefined;
@@ -111,11 +111,11 @@ async function handlePush(tx: Tx, keyring: Keyring, payload: Record<string, unkn
   return { installationId, repoId, created, cancelled };
 }
 
-// `installation`/`installation_repositories` não trazem o projeto da plataforma — só o GitHub
-// sabe da instalação e do repo, o vínculo a um projeto é algo que o usuário faz na nossa UI.
-// Por isso: "deleted"/"removed" sempre pode remover (revoga acesso de verdade), mas "created"/
-// "added" só consegue atualizar um vínculo que já exista; não há como criar um vínculo do zero
-// sem project_id (coluna NOT NULL em github_repo_links).
+// `installation`/`installation_repositories` don't carry the platform's project — only GitHub
+// knows about the installation and the repo; linking one to a project is something the user does
+// in our UI. That's why: "deleted"/"removed" can always remove (it genuinely revokes access), but
+// "created"/"added" can only update a link that already exists; there's no way to create a link
+// from scratch without a project_id (a NOT NULL column on github_repo_links).
 async function handleInstallation(tx: Tx, payload: Record<string, unknown>): Promise<void> {
   const installation = payload.installation as { id?: number } | undefined;
   if (!installation?.id) return;
@@ -169,9 +169,9 @@ export const githubRoutes: FastifyPluginAsync<{
   const installationTokenClient = opts.installationTokenClient ?? new NoopGitHubInstallationTokenClient();
   const checksClient = opts.checksClient ?? new NoopGitHubChecksClient();
 
-  // Escopado a este plugin: só a rota de webhook perde o parser de JSON padrão do Fastify.
-  // Guarda o buffer bruto em request.rawBody antes de desserializar, para o HMAC poder validar
-  // exatamente os bytes que o GitHub assinou.
+  // Scoped to this plugin: only the webhook route loses Fastify's default JSON parser.
+  // Stores the raw buffer in request.rawBody before deserializing, so the HMAC check can
+  // validate exactly the bytes GitHub signed.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request: FastifyRequest, body, done) => {
     const buf = body as Buffer;
     request.rawBody = buf;
@@ -194,27 +194,27 @@ export const githubRoutes: FastifyPluginAsync<{
           operationId: "githubWebhook",
           tags: ["GitHub"],
           summary:
-            "Recebe eventos do GitHub App (push, installation, installation_repositories); autentica por HMAC, não por token de API",
-          success: { status: 202, description: "Evento aceito" },
+            "Receives GitHub App events (push, installation, installation_repositories); authenticates via HMAC, not an API token",
+          success: { status: 202, description: "Event accepted" },
           errors: [400, 401],
         },
       },
     },
     async (request, reply) => {
       if (!webhookSecret) {
-        throw new ApiError(500, "github_webhook_not_configured", "GITHUB_WEBHOOK_SECRET não configurado.");
+        throw new ApiError(500, "github_webhook_not_configured", "GITHUB_WEBHOOK_SECRET is not configured.");
       }
       if (!verifySignature(webhookSecret, request.rawBody ?? Buffer.alloc(0), request.headers["x-hub-signature-256"])) {
-        throw new ApiError(401, "invalid_signature", "Assinatura X-Hub-Signature-256 ausente ou inválida.");
+        throw new ApiError(401, "invalid_signature", "Missing or invalid X-Hub-Signature-256 signature.");
       }
 
       const deliveryId = request.headers["x-github-delivery"];
       const event = request.headers["x-github-event"];
       if (typeof deliveryId !== "string" || !deliveryId) {
-        throw new ApiError(400, "missing_delivery_id", "Cabeçalho X-GitHub-Delivery é obrigatório.");
+        throw new ApiError(400, "missing_delivery_id", "X-GitHub-Delivery header is required.");
       }
       if (typeof event !== "string" || !event) {
-        throw new ApiError(400, "missing_event", "Cabeçalho X-GitHub-Event é obrigatório.");
+        throw new ApiError(400, "missing_event", "X-GitHub-Event header is required.");
       }
 
       const payload = (request.body ?? {}) as Record<string, unknown>;
@@ -224,7 +224,7 @@ export const githubRoutes: FastifyPluginAsync<{
         try {
           await tx.insert(githubWebhookDeliveries).values({ deliveryId, event });
         } catch (err) {
-          if (isUniqueViolation(err, DELIVERY_CONSTRAINT)) return; // delivery repetida: já processada, nada a fazer
+          if (isUniqueViolation(err, DELIVERY_CONSTRAINT)) return; // repeated delivery: already processed, nothing to do
           throw err;
         }
 
@@ -235,16 +235,16 @@ export const githubRoutes: FastifyPluginAsync<{
         } else if (event === "installation_repositories") {
           await handleInstallationRepositories(tx, payload);
         }
-        // Outros eventos (ex.: pull_request) são aceitos e ignorados nesta fase — previews de PR são fase 2.
+        // Other events (e.g. pull_request) are accepted and ignored at this stage — PR previews are phase 2.
       });
 
-      // Fora da transação, igual à rota manual de deployments: o worker só precisa ver a linha após o commit.
+      // Outside the transaction, same as the manual deployments route: the worker only needs to see the row after the commit.
       if (pushOutcome) {
         for (const dep of pushOutcome.created) {
           try {
             await queue?.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
           } catch (err) {
-            request.log.warn({ err, deploymentId: dep.id }, "push do github: falha ao enfileirar o reconciliador");
+            request.log.warn({ err, deploymentId: dep.id }, "github push: failed to enqueue the reconciler");
           }
           if (pushOutcome.installationId !== null) {
             await installationTokenClient.getInstallationToken(request.log, pushOutcome.installationId);
@@ -259,7 +259,7 @@ export const githubRoutes: FastifyPluginAsync<{
         }
         for (const old of pushOutcome.cancelled) {
           await queue?.enqueueCancelBuild({ deploymentId: old.id, serviceInstanceId: old.serviceInstanceId }).catch((err) => {
-            request.log.warn({ err, deploymentId: old.id }, "push do github: cancelamento do build não enfileirado");
+            request.log.warn({ err, deploymentId: old.id }, "github push: build cancellation not enqueued");
           });
         }
       }

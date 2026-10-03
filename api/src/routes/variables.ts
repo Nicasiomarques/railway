@@ -11,14 +11,14 @@ import { resolveInstanceEnv, validateReferences } from "../env/resolve.js";
 
 export const instanceParams = z.object({ instanceId: z.string().uuid() });
 export const keyParams = instanceParams.extend({
-  key: z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, "use letras maiúsculas, números e _"),
+  key: z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, "use uppercase letters, numbers and _"),
 });
 export const upsertBody = z.object({
   value: z.string().max(10_000),
   isSecret: z.boolean().default(false),
 });
 
-// O contexto autentica o valor à instância e à chave: copiar o ciphertext para outra quebra a decifragem.
+// The context authenticates the value to the instance and the key: copying the ciphertext to another one breaks decryption.
 const contextFor = (instanceId: string, key: string) => `variable:${instanceId}:${key}`;
 
 export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = async (app, { db, keyring }) => {
@@ -28,10 +28,10 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       config: {
         openapi: {
           operationId: "listVariables",
-          tags: ["Variáveis"],
-          summary: "Lista as variáveis da instância; secrets voltam sem valor",
+          tags: ["Variables"],
+          summary: "Lists the instance's variables; secrets come back without a value",
           pathSchema: instanceParams,
-          success: { status: 200, description: "Variáveis", schema: listOf(VariableListItemSchema) },
+          success: { status: 200, description: "Variables", schema: listOf(VariableListItemSchema) },
           errors: [404],
         },
       },
@@ -46,7 +46,7 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       .where(and(eq(variables.scope, "service_instance"), eq(variables.serviceInstanceId, instanceId)))
       .orderBy(asc(variables.key));
 
-    // Secrets nunca voltam em texto puro; o cliente vê só que existem.
+    // Secrets never come back in plain text; the client only sees that they exist.
     return {
       data: rows.map((v) => ({
         key: v.key,
@@ -58,17 +58,17 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
     };
   });
 
-  // Ambiente final da instância, com referências resolvidas. Secrets vêm mascarados.
+  // The instance's final environment, with references resolved. Secrets come back masked.
   app.get(
     "/services/:instanceId/env",
     {
       config: {
         openapi: {
           operationId: "getInstanceEnv",
-          tags: ["Variáveis"],
-          summary: "Ambiente final da instância, com referências resolvidas",
+          tags: ["Variables"],
+          summary: "The instance's final environment, with references resolved",
           pathSchema: instanceParams,
-          success: { status: 200, description: "Ambiente resolvido", schema: listOf(ResolvedVariableSchema) },
+          success: { status: 200, description: "Resolved environment", schema: listOf(ResolvedVariableSchema) },
           errors: [404, 422],
         },
       },
@@ -89,11 +89,11 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       config: {
         openapi: {
           operationId: "upsertVariable",
-          tags: ["Variáveis"],
-          summary: "Cria ou atualiza uma variável da instância",
+          tags: ["Variables"],
+          summary: "Creates or updates one of the instance's variables",
           pathSchema: keyParams,
           bodySchema: upsertBody,
-          success: { status: 200, description: "Variável gravada", schema: VariableUpsertSchema },
+          success: { status: 200, description: "Variable saved", schema: VariableUpsertSchema },
           errors: [403, 404, 422],
         },
       },
@@ -126,7 +126,7 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       })
       .returning();
 
-    // Auditoria registra a chave e o tipo, nunca o valor.
+    // The audit log records the key and the type, never the value.
     await db.insert(auditLogs).values({
       organizationId,
       actorId: userId,
@@ -144,10 +144,10 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       config: {
         openapi: {
           operationId: "deleteVariable",
-          tags: ["Variáveis"],
-          summary: "Remove uma variável da instância",
+          tags: ["Variables"],
+          summary: "Removes one of the instance's variables",
           pathSchema: keyParams,
-          success: { status: 204, description: "Variável removida" },
+          success: { status: 204, description: "Variable removed" },
           errors: [403, 404],
         },
       },
@@ -161,7 +161,7 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
       .delete(variables)
       .where(and(eq(variables.scope, "service_instance"), eq(variables.serviceInstanceId, instanceId), eq(variables.key, key)))
       .returning({ id: variables.id });
-    if (!deleted) throw new ApiError(404, "variable_not_found", "Variável não encontrada.");
+    if (!deleted) throw new ApiError(404, "variable_not_found", "Variable not found.");
 
     await db.insert(auditLogs).values({
       organizationId,

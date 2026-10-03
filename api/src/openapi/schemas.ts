@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// Contratos de resposta. Espelham o que as rotas devolvem (ver db/schema.ts).
-// Datas saem como ISO 8601 no JSON.
+// Response contracts. Mirror what the routes return (see db/schema.ts).
+// Dates are emitted as ISO 8601 in JSON.
 
 const uuid = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
@@ -85,7 +85,7 @@ export const ServiceInstanceSchema = z.object({
   deletedAt: timestamp.nullable(),
 });
 
-// Na listagem, cada serviço traz um resumo das instâncias por ambiente.
+// In the listing, each service carries a summary of its instances per environment.
 export const ServiceInstanceSummarySchema = z.object({
   id: uuid,
   environmentId: uuid,
@@ -111,7 +111,7 @@ export const ConnectionListItemSchema = ConnectionSchema.extend({
   createdAt: timestamp,
 });
 
-// Secrets vêm com value null; o cliente só sabe que existem.
+// Secrets come back with value null; the client only knows they exist.
 export const VariableListItemSchema = z.object({
   key: z.string(),
   isSecret: z.boolean(),
@@ -176,8 +176,8 @@ export const BuildLogSchema = z.object({
   updatedAt: timestamp.nullable(),
 });
 
-// Snapshot básico do runtime de uma instância (architecture.md §9, §10). Sem série temporal no MVP:
-// `from`/`to`/`metric` ficam documentados na query para o contrato já prever a evolução futura.
+// Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
+// `from`/`to`/`metric` stay documented on the query so the contract already foresees that future.
 export const MetricsSnapshotSchema = z.object({
   instanceId: uuid,
   replicas: z.number().int(),

@@ -3,7 +3,7 @@ import { hashToken } from "../auth.js";
 import type { Db } from "./client.js";
 import { apiTokens, memberships, organizations, users } from "./schema.js";
 
-// Cria usuário, organização (owner) e token de API. Usado no seed de dev e nos testes.
+// Creates a user, an organization (owner) and an API token. Used in the dev seed and in tests.
 export async function createUserWithToken(db: Db, label = "dev") {
   const suffix = randomBytes(4).toString("hex");
 

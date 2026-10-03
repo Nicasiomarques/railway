@@ -11,10 +11,10 @@ export function sealEnvSnapshot(keyring: Keyring, snapshotId: string, env: Recor
 export function openEnvSnapshot(keyring: Keyring, snapshotId: string, payload: string): Record<string, string> {
   const parsed: unknown = JSON.parse(decryptValue(keyring, payload, snapshotContext(snapshotId)));
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new CryptoError("Snapshot de env não é um objeto.");
+    throw new CryptoError("Env snapshot is not an object.");
   }
   for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") throw new CryptoError(`Valor do snapshot para ${key} não é texto.`);
+    if (typeof value !== "string") throw new CryptoError(`Snapshot value for ${key} is not a string.`);
   }
   return parsed as Record<string, string>;
 }

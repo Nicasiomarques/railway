@@ -34,11 +34,11 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       config: {
         openapi: {
           operationId: "createProject",
-          tags: ["Projetos"],
-          summary: "Cria um projeto com o ambiente production",
+          tags: ["Projects"],
+          summary: "Creates a project with its production environment",
           bodySchema: createProjectBody,
           idempotent: true,
-          success: { status: 201, description: "Projeto criado", schema: ProjectSchema },
+          success: { status: 201, description: "Project created", schema: ProjectSchema },
           errors: [403, 404, 409],
         },
       },
@@ -50,7 +50,7 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
 
     const role = await requireMembership(db, userId, body.organizationId);
     if (role === "viewer") {
-      throw new ApiError(403, "forbidden", "Papel 'viewer' não pode criar projetos.");
+      throw new ApiError(403, "forbidden", "The 'viewer' role cannot create projects.");
     }
 
     const result = await runIdempotent(db, {
@@ -69,13 +69,13 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
             ),
           )
           .limit(1);
-        if (taken) throw new ApiError(409, "slug_taken", `Slug "${slug}" já está em uso nesta organização.`);
+        if (taken) throw new ApiError(409, "slug_taken", `Slug "${slug}" is already in use in this organization.`);
 
         const [project] = await tx
           .insert(projects)
           .values({ organizationId: body.organizationId, name: body.name, slug })
           .returning();
-        // Todo projeto nasce com o ambiente de produção (ver architecture.md §6).
+        // Every project is born with a production environment (see architecture.md §6).
         await tx.insert(environments).values({ projectId: project.id, name: "production", type: "production" });
         await tx.insert(auditLogs).values({
           organizationId: body.organizationId,
@@ -96,10 +96,10 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       config: {
         openapi: {
           operationId: "listProjects",
-          tags: ["Projetos"],
-          summary: "Lista os projetos de uma organização, paginados por cursor",
+          tags: ["Projects"],
+          summary: "Lists an organization's projects, paginated by cursor",
           querySchema: listProjectsQuery,
-          success: { status: 200, description: "Projetos", schema: paginated(ProjectSchema) },
+          success: { status: 200, description: "Projects", schema: paginated(ProjectSchema) },
           errors: [404],
         },
       },
@@ -132,7 +132,7 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
     const hasMore = rows.length > query.limit;
     const data = hasMore ? rows.slice(0, query.limit) : rows;
     const last = data.at(-1);
-    // Date do pg tem precisão de ms, igual ao date_trunc usado na ordenação.
+    // pg's Date has ms precision, matching the date_trunc used for ordering.
     const nextCursor = hasMore && last ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id }) : null;
 
     return { data, nextCursor };

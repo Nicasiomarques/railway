@@ -42,8 +42,8 @@ async function createDomain(token: string, instanceId: string, payload: Record<s
   return app.inject({ method: "POST", url: `/v1/services/${instanceId}/domains`, headers: auth(token), payload });
 }
 
-describe("domínios", () => {
-  it("cria domínio auto com subdomínio gerado e tls_state pending", async () => {
+describe("domains", () => {
+  it("creates an auto domain with a generated subdomain and tls_state pending", async () => {
     const { token, instanceId } = await setup();
     const res = await createDomain(token, instanceId, { type: "auto" });
 
@@ -54,54 +54,54 @@ describe("domínios", () => {
     expect(body.hostname).toMatch(/^api-[0-9a-f]{8}\.apps\.railway\.local$/);
   });
 
-  it("cria domínio custom com o hostname informado", async () => {
+  it("creates a custom domain with the given hostname", async () => {
     const { token, instanceId } = await setup();
-    const res = await createDomain(token, instanceId, { type: "custom", hostname: "app.minhaempresa.com" });
+    const res = await createDomain(token, instanceId, { type: "custom", hostname: "app.mycompany.com" });
 
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual(
-      expect.objectContaining({ type: "custom", hostname: "app.minhaempresa.com", tlsState: "pending" }),
+      expect.objectContaining({ type: "custom", hostname: "app.mycompany.com", tlsState: "pending" }),
     );
   });
 
-  it("rejeita custom sem hostname e auto com hostname", async () => {
+  it("rejects custom without a hostname and auto with a hostname", async () => {
     const { token, instanceId } = await setup();
 
-    const semHostname = await createDomain(token, instanceId, { type: "custom" });
-    expect(semHostname.statusCode).toBe(400);
+    const withoutHostname = await createDomain(token, instanceId, { type: "custom" });
+    expect(withoutHostname.statusCode).toBe(400);
 
-    const comHostname = await createDomain(token, instanceId, { type: "auto", hostname: "nao-deveria.com" });
-    expect(comHostname.statusCode).toBe(400);
+    const withHostname = await createDomain(token, instanceId, { type: "auto", hostname: "should-not.com" });
+    expect(withHostname.statusCode).toBe(400);
   });
 
-  it("rejeita hostname com formato inválido", async () => {
+  it("rejects a hostname with an invalid format", async () => {
     const { token, instanceId } = await setup();
-    const res = await createDomain(token, instanceId, { type: "custom", hostname: "nao é um hostname" });
+    const res = await createDomain(token, instanceId, { type: "custom", hostname: "not a hostname" });
     expect(res.statusCode).toBe(400);
   });
 
-  it("recusa hostname repetido, mesmo em instâncias diferentes", async () => {
+  it("refuses a repeated hostname, even across different instances", async () => {
     const { token, instanceId } = await setup();
-    await createDomain(token, instanceId, { type: "custom", hostname: "duplicado.com" });
+    await createDomain(token, instanceId, { type: "custom", hostname: "duplicate.com" });
 
-    const again = await createDomain(token, instanceId, { type: "custom", hostname: "duplicado.com" });
+    const again = await createDomain(token, instanceId, { type: "custom", hostname: "duplicate.com" });
     expect(again.statusCode).toBe(409);
     expect(again.json().code).toBe("hostname_taken");
   });
 
-  it("lista os domínios da instância", async () => {
+  it("lists the instance's domains", async () => {
     const { token, instanceId } = await setup();
     await createDomain(token, instanceId, { type: "auto" });
-    await createDomain(token, instanceId, { type: "custom", hostname: "outro.com" });
+    await createDomain(token, instanceId, { type: "custom", hostname: "other.com" });
 
     const list = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/domains`, headers: auth(token) });
     expect(list.statusCode).toBe(200);
     expect(list.json().data).toHaveLength(2);
   });
 
-  it("remove domínio e retorna 404 quando ele não existe", async () => {
+  it("removes a domain and returns 404 when it doesn't exist", async () => {
     const { token, instanceId } = await setup();
-    const created = (await createDomain(token, instanceId, { type: "custom", hostname: "apagar.com" })).json();
+    const created = (await createDomain(token, instanceId, { type: "custom", hostname: "delete-me.com" })).json();
 
     const del = await app.inject({
       method: "DELETE",
@@ -119,7 +119,7 @@ describe("domínios", () => {
     expect(again.json().code).toBe("domain_not_found");
   });
 
-  it("impede viewer de criar ou remover, mas permite listar", async () => {
+  it("blocks a viewer from creating or removing, but allows listing", async () => {
     const { token, orgId, instanceId } = await setup();
     const created = (await createDomain(token, instanceId, { type: "custom", hostname: "viewer-test.com" })).json();
     const viewer = await createUserWithToken(db, "viewer");
@@ -139,7 +139,7 @@ describe("domínios", () => {
     expect(list.statusCode).toBe(200);
   });
 
-  it("retorna 404 para instância de outra organização", async () => {
+  it("returns 404 for an instance in another organization", async () => {
     const { instanceId } = await setup();
     const outsider = await createUserWithToken(db, "outsider");
     const res = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/domains`, headers: auth(outsider.token) });
@@ -147,15 +147,15 @@ describe("domínios", () => {
     expect(res.json().code).toBe("instance_not_found");
   });
 
-  it("não grava valor no log de auditoria sem o hostname", async () => {
+  it("doesn't write to the audit log without the hostname", async () => {
     const { token, orgId, instanceId } = await setup();
-    await createDomain(token, instanceId, { type: "custom", hostname: "auditado.com" });
+    await createDomain(token, instanceId, { type: "custom", hostname: "audited.com" });
 
     const { rows } = await db.execute<{ organization_id: string; metadata: unknown }>(
       sql`select organization_id, metadata from audit_logs where action = 'domain.create'`,
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].organization_id).toBe(orgId);
-    expect(JSON.stringify(rows[0].metadata)).toContain("auditado.com");
+    expect(JSON.stringify(rows[0].metadata)).toContain("audited.com");
   });
 });

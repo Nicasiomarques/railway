@@ -1,2 +1,2 @@
-// O schema vive no pacote @railway-like/db, compartilhado com os workers.
+// The schema lives in the @railway-like/db package, shared with the workers.
 export * from "@railway-like/db";

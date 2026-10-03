@@ -20,11 +20,11 @@ const deploymentParams = z.object({ deploymentId: z.string().uuid() });
 
 export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-// Sem `stream`: snapshot JSON do build (compatível com o comportamento anterior desta rota).
-// `stream=build|runtime`: a mesma rota passa a responder por SSE (architecture.md §9, §10).
+// Without `stream`: a JSON snapshot of the build (compatible with this route's previous behavior).
+// `stream=build|runtime`: the same route starts responding over SSE (architecture.md §9, §10).
 const deploymentLogsQuery = z.object({
   stream: z.enum(["build", "runtime"]).optional(),
-  // Só vale para `stream=runtime`: timestamp RFC3339 a partir de quando mostrar logs do runtime.
+  // Only applies to `stream=runtime`: an RFC3339 timestamp from which to show runtime logs.
   since: z.string().optional(),
 });
 
@@ -34,7 +34,7 @@ const metricsQuery = z.object({
   metric: z.string().optional(),
 });
 
-// Builds em andamento: enquanto o deployment estiver num destes estados, o tail de build continua reabrindo.
+// In-progress builds: while the deployment is in one of these states, the build tail keeps reopening.
 const BUILD_IN_PROGRESS: DeploymentStatus[] = ["Queued", "Building"];
 const BUILD_LOG_POLL_MS = 500;
 
@@ -43,13 +43,13 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     if (signal.aborted) return resolve();
     const timer = setTimeout(resolve, ms);
     signal.addEventListener("abort", () => resolve(), { once: true });
-    // Não deixa o timer vivo sozinho atrasar o fim do processo em testes.
+    // Don't let a lone live timer delay process exit in tests.
     (timer as { unref?: () => void }).unref?.();
   });
 }
 
-// Tail do retrato de `build_logs`, salvo pelo reconciliador (ver captureBuildLogs em workers/reconciler).
-// Sem append real: faz polling do mesmo registro e manda só as linhas novas; fecha quando o build termina.
+// Tails the `build_logs` snapshot saved by the reconciler (see captureBuildLogs in workers/reconciler).
+// No real append: polls the same row and sends only the new lines; closes once the build finishes.
 async function* tailBuildLog(db: Db, deploymentId: string, signal: AbortSignal): AsyncIterable<string> {
   let sent = 0;
   while (!signal.aborted) {
@@ -63,7 +63,7 @@ async function* tailBuildLog(db: Db, deploymentId: string, signal: AbortSignal):
   }
 }
 
-// Escreve um AsyncIterable<string> como SSE (`data: <linha>\n\n` por linha) e fecha ao acabar ou ao desconectar.
+// Writes an AsyncIterable<string> as SSE (`data: <line>\n\n` per line) and closes on finish or disconnect.
 async function sendSse(request: FastifyRequest, reply: FastifyReply, lines: AsyncIterable<string>): Promise<void> {
   reply.hijack();
   reply.raw.writeHead(200, {
@@ -81,22 +81,22 @@ async function sendSse(request: FastifyRequest, reply: FastifyReply, lines: Asyn
   }
 }
 
-// Exatamente uma das duas origens: imagem pronta por digest, ou commit de um repo que o cluster constrói.
-// Qual é obrigatória depende da origem do serviço, e isso é checado na rota.
+// Exactly one of the two sources: a ready-made image by digest, or a commit from a repo that the cluster builds.
+// Which one is required depends on the service's source, and that is checked in the route.
 export const createDeploymentBody = z
   .object({
     imageDigest: z
       .string()
-      .regex(/^[a-z0-9]+(?:[._/-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/, "use imagem por digest: repo@sha256:<64 hex>")
+      .regex(/^[a-z0-9]+(?:[._/-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/, "use an image by digest: repo@sha256:<64 hex>")
       .optional(),
-    commitSha: z.string().regex(/^[a-f0-9]{40}$/, "use o SHA completo do commit (40 hex)").optional(),
+    commitSha: z.string().regex(/^[a-f0-9]{40}$/, "use the full commit SHA (40 hex)").optional(),
   })
   .superRefine((body, ctx) => {
     if (!body.imageDigest && !body.commitSha) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "informe imageDigest ou commitSha" });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "provide imageDigest or commitSha" });
     }
     if (body.imageDigest && body.commitSha) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "informe só um: imageDigest ou commitSha" });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "provide only one: imageDigest or commitSha" });
     }
   });
 
@@ -104,16 +104,16 @@ const listDeploymentsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
-// Estados em que um deployment ainda pode virar Running. Criar outro cancela estes.
+// States in which a deployment can still become Running. Creating another one cancels these.
 const IN_FLIGHT: DeploymentStatus[] = ["Queued", "Building", "Deploying", "HealthChecking"];
 
 type DeploymentRow = typeof deployments.$inferSelect;
 type DeploymentTrigger = DeploymentRow["trigger"];
 
-// Núcleo de criação de deployment (architecture.md §5.2, passos 2-3): versiona, grava o snapshot
-// de env e cancela o que estava em voo na mesma instância. Usado pela rota manual (abaixo) e pelo
-// webhook de push do GitHub (routes/github.ts) — a única diferença entre as duas origens é o
-// trigger e os campos de commit/branch/autor.
+// Core of deployment creation (architecture.md §5.2, steps 2-3): versions it, saves the env
+// snapshot and cancels whatever was in flight on the same instance. Used by the manual route
+// (below) and by the GitHub push webhook (routes/github.ts) — the only difference between the
+// two origins is the trigger and the commit/branch/author fields.
 export async function createQueuedDeployment(
   tx: Tx,
   keyring: Keyring,
@@ -128,13 +128,13 @@ export async function createQueuedDeployment(
 ): Promise<{ created: DeploymentRow; cancelledIds: string[] }> {
   const { instanceId } = input;
 
-  // Trava a instância: as versões são sequenciais, e duas criações concorrentes não podem repetir uma.
+  // Locks the instance: versions are sequential, and two concurrent creations must not repeat one.
   const [locked] = await tx
     .select({ id: serviceInstances.id })
     .from(serviceInstances)
     .where(eq(serviceInstances.id, instanceId))
     .for("update");
-  if (!locked) throw new ApiError(404, "instance_not_found", "Instância não encontrada.");
+  if (!locked) throw new ApiError(404, "instance_not_found", "Instance not found.");
 
   const [{ last }] = await tx
     .select({ last: sql<number>`coalesce(max(${deployments.versionNo}), 0)::int` })
@@ -142,7 +142,7 @@ export async function createQueuedDeployment(
     .where(eq(deployments.serviceInstanceId, instanceId));
   const versionNo = last + 1;
 
-  // Snapshot imutável: um rollback volta a este conjunto, não ao estado atual das variáveis.
+  // Immutable snapshot: a rollback returns to this set, not to the variables' current state.
   const env = await resolveInstanceEnv(tx, keyring, instanceId);
   const snapshotId = randomUUID();
   await tx.insert(envSnapshots).values({
@@ -151,7 +151,7 @@ export async function createQueuedDeployment(
     payloadEnc: sealEnvSnapshot(keyring, snapshotId, Object.fromEntries(env.map((v) => [v.key, v.value]))),
   });
 
-  // O novo deployment substitui os que ainda estavam em voo (architecture.md §5.2, passo 3).
+  // The new deployment supersedes the ones still in flight (architecture.md §5.2, step 3).
   const inFlight = await tx
     .select({ id: deployments.id, status: deployments.status })
     .from(deployments)
@@ -164,7 +164,7 @@ export async function createQueuedDeployment(
       deploymentId: old.id,
       fromStatus: old.status,
       toStatus: "Cancelled",
-      reason: `substituído pela versão ${versionNo}`,
+      reason: `superseded by version ${versionNo}`,
     });
     cancelledIds.push(old.id);
   }
@@ -183,7 +183,7 @@ export async function createQueuedDeployment(
       envSnapshotId: snapshotId,
     })
     .returning();
-  await tx.insert(deploymentEvents).values({ deploymentId: created.id, fromStatus: null, toStatus: "Queued", reason: "criado" });
+  await tx.insert(deploymentEvents).values({ deploymentId: created.id, fromStatus: null, toStatus: "Queued", reason: "created" });
 
   return { created, cancelledIds };
 }
@@ -213,11 +213,11 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         openapi: {
           operationId: "createDeployment",
           tags: ["Deployments"],
-          summary: "Cria um deployment de uma imagem por digest; o snapshot de env é gravado agora",
+          summary: "Creates a deployment from an image by digest; the env snapshot is saved now",
           pathSchema: instanceParams,
           bodySchema: createDeploymentBody,
           idempotent: true,
-          success: { status: 202, description: "Deployment enfileirado", schema: DeploymentSchema },
+          success: { status: 202, description: "Deployment queued", schema: DeploymentSchema },
           errors: [403, 404, 422, 503],
         },
       },
@@ -234,13 +234,13 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         .innerJoin(services, eq(services.id, serviceInstances.serviceId))
         .where(eq(serviceInstances.id, instanceId));
       if (source.source === "github_repo" && !body.commitSha) {
-        throw new ApiError(400, "source_mismatch", "Serviço github_repo exige commitSha, não imageDigest.");
+        throw new ApiError(400, "source_mismatch", "A github_repo service requires commitSha, not imageDigest.");
       }
       if (source.source !== "github_repo" && !body.imageDigest) {
-        throw new ApiError(400, "source_mismatch", "Este serviço exige imageDigest, não commitSha.");
+        throw new ApiError(400, "source_mismatch", "This service requires imageDigest, not commitSha.");
       }
 
-      // Preenchido dentro da transação; usado só depois do commit (na repetição fica vazio, e não precisa).
+      // Filled inside the transaction; used only after the commit (on a retry it stays empty, and doesn't need to be used).
       const cancelledIds: string[] = [];
       const result = await runIdempotent(db, {
         userId,
@@ -264,14 +264,14 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         },
       });
 
-      // Enfileira depois do commit: o worker precisa enxergar a linha. Repetir com a mesma Idempotency-Key
-      // enfileira de novo; o jobId por versão deduplica, e o reconciliador é idempotente.
+      // Enqueues after the commit: the worker needs to see the row. Retrying with the same Idempotency-Key
+      // enqueues again; the jobId per version deduplicates, and the reconciler is idempotent.
       const dep = result.body as ReturnType<typeof toResponse>;
       try {
-        if (!queue) throw new Error("fila de deployments não configurada");
+        if (!queue) throw new Error("deployment queue not configured");
         await queue.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
       } catch {
-        // Sem job o deployment ficaria em Queued para sempre. Marca como Failed para o estado refletir a realidade.
+        // Without a job the deployment would stay Queued forever. Marks it as Failed so the state reflects reality.
         await db.transaction(async (tx) => {
           const updated = await tx
             .update(deployments)
@@ -283,18 +283,18 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
               deploymentId: dep.id,
               fromStatus: "Queued",
               toStatus: "Failed",
-              reason: "falha ao enfileirar",
+              reason: "failed to enqueue",
             });
           }
         });
         throw new ApiError(
           503,
           "queue_unavailable",
-          "Não foi possível enfileirar o deployment; ele foi marcado como Failed. Crie um novo.",
+          "Could not enqueue the deployment; it was marked as Failed. Create a new one.",
         );
       }
 
-      // Apaga os builds dos deployments que esta versão substituiu. Best effort: se falhar, o Job morre pelo timeout.
+      // Deletes the builds of the deployments this version superseded. Best effort: if it fails, the Job dies via timeout.
       for (const id of cancelledIds) {
         await queue?.enqueueCancelBuild({ deploymentId: id, serviceInstanceId: instanceId }).catch(() => undefined);
       }
@@ -310,7 +310,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         openapi: {
           operationId: "listDeployments",
           tags: ["Deployments"],
-          summary: "Lista os deployments de uma instância, do mais recente para o mais antigo",
+          summary: "Lists an instance's deployments, from most recent to oldest",
           pathSchema: instanceParams,
           querySchema: listDeploymentsQuery,
           success: { status: 200, description: "Deployments", schema: listOf(DeploymentSchema) },
@@ -340,7 +340,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         openapi: {
           operationId: "getDeployment",
           tags: ["Deployments"],
-          summary: "Detalha um deployment com o histórico de estados",
+          summary: "Shows a deployment's details along with its state history",
           pathSchema: deploymentParams,
           success: { status: 200, description: "Deployment", schema: DeploymentDetailSchema },
           errors: [404],
@@ -350,8 +350,8 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
     async (request) => {
       const { deploymentId } = deploymentParams.parse(request.params);
       const [dep] = await db.select().from(deployments).where(eq(deployments.id, deploymentId));
-      // Sem acesso e inexistente devolvem o mesmo erro: não revela que o id existe.
-      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment não encontrado.");
+      // No access and nonexistent return the same error: it doesn't reveal that the id exists.
+      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment not found.");
       if (!dep) throw notFound();
       await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch(() => {
         throw notFound();
@@ -369,7 +369,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
     },
   );
 
-  // Cancela um deployment que ainda não chegou a Running. Running só sai por substituição (ver architecture §5.2).
+  // Cancels a deployment that hasn't reached Running yet. Running only exits via supersession (see architecture §5.2).
   app.post(
     "/deployments/:deploymentId/cancel",
     {
@@ -377,16 +377,16 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         openapi: {
           operationId: "cancelDeployment",
           tags: ["Deployments"],
-          summary: "Cancela um deployment que ainda não está Running; o build em andamento é apagado",
+          summary: "Cancels a deployment that isn't Running yet; the build in progress is deleted",
           pathSchema: deploymentParams,
-          success: { status: 200, description: "Deployment cancelado", schema: DeploymentSchema },
+          success: { status: 200, description: "Deployment cancelled", schema: DeploymentSchema },
           errors: [403, 404, 409],
         },
       },
     },
     async (request) => {
       const { deploymentId } = deploymentParams.parse(request.params);
-      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment não encontrado.");
+      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment not found.");
       const [dep] = await db.select().from(deployments).where(eq(deployments.id, deploymentId));
       if (!dep) throw notFound();
 
@@ -396,24 +396,24 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       });
 
       if (!IN_FLIGHT.includes(dep.status)) {
-        throw new ApiError(409, "not_cancellable", `Deployment em ${dep.status} não pode ser cancelado.`);
+        throw new ApiError(409, "not_cancellable", `A deployment in ${dep.status} cannot be cancelled.`);
       }
 
       const [cancelled] = await db.transaction(async (tx) => {
         transition(dep.status, "Cancelled");
-        // Condicionado ao status lido: se o worker avançou nesse meio tempo, a escrita não acontece.
+        // Conditioned on the status we read: if the worker advanced in the meantime, the write doesn't happen.
         const rows = await tx
           .update(deployments)
           .set({ status: "Cancelled", updatedAt: new Date() })
           .where(and(eq(deployments.id, deploymentId), eq(deployments.status, dep.status)))
           .returning();
-        if (rows.length === 0) throw new ApiError(409, "state_changed", "O deployment mudou de estado; tente de novo.");
+        if (rows.length === 0) throw new ApiError(409, "state_changed", "The deployment's state changed; try again.");
 
         await tx.insert(deploymentEvents).values({
           deploymentId,
           fromStatus: dep.status,
           toStatus: "Cancelled",
-          reason: "cancelado pelo usuário",
+          reason: "cancelled by user",
         });
         await tx.insert(auditLogs).values({
           organizationId: access.organizationId,
@@ -424,27 +424,27 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         return rows;
       });
 
-      // Sempre enfileira: o worker apaga o Job se houver um e ignora se não houver (imagens não têm Job).
+      // Always enqueues: the worker deletes the Job if there is one and ignores it if there isn't (images have no Job).
       await queue?.enqueueCancelBuild({ deploymentId, serviceInstanceId: dep.serviceInstanceId }).catch((err) => {
-        request.log.warn({ err, deploymentId }, "cancelamento do build não enfileirado; o Job expira pelo timeout");
+        request.log.warn({ err, deploymentId }, "build cancellation not enqueued; the Job will expire via timeout");
       });
       return toResponse(cancelled);
     },
   );
 
-  // Sem `stream`: último retrato dos logs do build (vazio antes do build começar, ou para deployments de imagem).
-  // Com `stream=build|runtime`: abre um SSE e faz o tail (architecture.md §9, §10).
+  // Without `stream`: last snapshot of the build logs (empty before the build starts, or for image deployments).
+  // With `stream=build|runtime`: opens an SSE and tails it (architecture.md §9, §10).
   app.get(
     "/deployments/:deploymentId/logs",
     {
       config: {
         openapi: {
           operationId: "getDeploymentLogs",
-          tags: ["Deployments", "Observabilidade"],
-          summary: "Logs do deployment: snapshot do build sem `stream`, ou tail por SSE com `stream=build|runtime`",
+          tags: ["Deployments", "Observability"],
+          summary: "Deployment logs: build snapshot without `stream`, or SSE tail with `stream=build|runtime`",
           pathSchema: deploymentParams,
           querySchema: deploymentLogsQuery,
-          success: { status: 200, description: "Logs (JSON sem `stream`; `text/event-stream` com `stream`)", schema: BuildLogSchema },
+          success: { status: 200, description: "Logs (JSON without `stream`; `text/event-stream` with `stream`)", schema: BuildLogSchema },
           errors: [404, 503],
         },
       },
@@ -452,7 +452,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
     async (request, reply) => {
       const { deploymentId } = deploymentParams.parse(request.params);
       const query = deploymentLogsQuery.parse(request.query);
-      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment não encontrado.");
+      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment not found.");
       const [dep] = await db
         .select({ serviceInstanceId: deployments.serviceInstanceId, environmentId: serviceInstances.environmentId })
         .from(deployments)
@@ -472,25 +472,26 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         return sendSse(request, reply, tailBuildLog(db, deploymentId, request.signal));
       }
 
-      if (!runtime) throw new ApiError(503, "runtime_unavailable", "Runtime não configurado nesta API.");
+      if (!runtime) throw new ApiError(503, "runtime_unavailable", "No runtime configured on this API.");
       const ref = { name: workloadName(dep.serviceInstanceId), namespace: namespaceFor(dep.environmentId) };
       return sendSse(request, reply, runtime.tailLogs(ref, query.since ? { since: query.since } : undefined));
     },
   );
 
-  // Snapshot básico do runtime da instância. Sem série temporal real no MVP: `from`/`to`/`metric` só documentam
-  // o contrato que a arquitetura prevê (architecture.md §9, §10); a resposta é sempre o estado atual.
+  // Basic snapshot of the instance's runtime. No real time series in the MVP: `from`/`to`/`metric` only
+  // document the contract the architecture foresees (architecture.md §9, §10); the response is always
+  // the current state.
   app.get(
     "/services/:instanceId/metrics",
     {
       config: {
         openapi: {
           operationId: "getServiceMetrics",
-          tags: ["Observabilidade"],
-          summary: "Snapshot do runtime de uma instância (réplicas e estado); sem série temporal no MVP",
+          tags: ["Observability"],
+          summary: "Runtime snapshot of an instance (replicas and state); no time series in the MVP",
           pathSchema: instanceParams,
           querySchema: metricsQuery,
-          success: { status: 200, description: "Snapshot de métricas", schema: MetricsSnapshotSchema },
+          success: { status: 200, description: "Metrics snapshot", schema: MetricsSnapshotSchema },
           errors: [404, 503],
         },
       },
@@ -499,7 +500,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       const { instanceId } = instanceParams.parse(request.params);
       metricsQuery.parse(request.query);
       await requireInstanceAccess(db, request.auth!.userId, instanceId);
-      if (!runtime) throw new ApiError(503, "runtime_unavailable", "Runtime não configurado nesta API.");
+      if (!runtime) throw new ApiError(503, "runtime_unavailable", "No runtime configured on this API.");
 
       const [row] = await db.select({ environmentId: serviceInstances.environmentId }).from(serviceInstances).where(eq(serviceInstances.id, instanceId));
       const ref = { name: workloadName(instanceId), namespace: namespaceFor(row!.environmentId) };

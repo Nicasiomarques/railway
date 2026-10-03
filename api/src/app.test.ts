@@ -24,15 +24,15 @@ function authed(token: string, headers: Record<string, string> = {}) {
   return { authorization: `Bearer ${token}`, ...headers };
 }
 
-describe("autenticação", () => {
-  it("rejeita requisição sem token", async () => {
+describe("authentication", () => {
+  it("rejects request without a token", async () => {
     const res = await app.inject({ method: "GET", url: "/v1/organizations" });
     expect(res.statusCode).toBe(401);
     expect(res.headers["content-type"]).toContain("application/problem+json");
     expect(res.json().code).toBe("unauthenticated");
   });
 
-  it("rejeita token inexistente", async () => {
+  it("rejects nonexistent token", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/v1/organizations",
@@ -41,7 +41,7 @@ describe("autenticação", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("rejeita token expirado", async () => {
+  it("rejects expired token", async () => {
     const { user, token } = await createUserWithToken(db, "expired");
     await db
       .update(apiTokens)
@@ -53,8 +53,8 @@ describe("autenticação", () => {
   });
 });
 
-describe("organizações", () => {
-  it("cria organização com slug derivado do nome e o criador como owner", async () => {
+describe("organizations", () => {
+  it("creates organization with slug derived from the name and the creator as owner", async () => {
     const { token } = await createUserWithToken(db);
     const res = await app.inject({
       method: "POST",
@@ -70,7 +70,7 @@ describe("organizações", () => {
     expect(roles).toContain("owner");
   });
 
-  it("retorna 409 para slug duplicado", async () => {
+  it("returns 409 for duplicate slug", async () => {
     const { token } = await createUserWithToken(db);
     const payload = { name: "Acme", slug: "acme" };
     await app.inject({ method: "POST", url: "/v1/organizations", headers: authed(token), payload });
@@ -79,7 +79,7 @@ describe("organizações", () => {
     expect(res.json().code).toBe("slug_taken");
   });
 
-  it("retorna 400 em problem+json para corpo inválido", async () => {
+  it("returns 400 as problem+json for invalid body", async () => {
     const { token } = await createUserWithToken(db);
     const res = await app.inject({
       method: "POST",
@@ -94,7 +94,7 @@ describe("organizações", () => {
 });
 
 describe("Idempotency-Key", () => {
-  it("repetir a mesma chave e o mesmo corpo devolve a mesma resposta sem criar outro recurso", async () => {
+  it("repeating the same key and body returns the same response without creating another resource", async () => {
     const { token } = await createUserWithToken(db);
     const headers = authed(token, { "idempotency-key": "req-1" });
     const payload = { name: "Idempotente" };
@@ -111,7 +111,7 @@ describe("Idempotency-Key", () => {
     expect(idempotente).toHaveLength(1);
   });
 
-  it("retorna 422 quando a mesma chave é usada com outro corpo", async () => {
+  it("returns 422 when the same key is used with a different body", async () => {
     const { token } = await createUserWithToken(db);
     const headers = authed(token, { "idempotency-key": "req-2" });
     await app.inject({ method: "POST", url: "/v1/organizations", headers, payload: { name: "Um" } });
@@ -121,7 +121,7 @@ describe("Idempotency-Key", () => {
   });
 });
 
-describe("projetos", () => {
+describe("projects", () => {
   async function setup() {
     const { token } = await createUserWithToken(db);
     const org = await app.inject({
@@ -133,7 +133,7 @@ describe("projetos", () => {
     return { token, orgId: org.json().id as string };
   }
 
-  it("cria projeto dentro de uma organização da qual é membro", async () => {
+  it("creates project inside an organization it is a member of", async () => {
     const { token, orgId } = await setup();
     const res = await app.inject({
       method: "POST",
@@ -145,19 +145,19 @@ describe("projetos", () => {
     expect(res.json().slug).toBe("api-principal");
   });
 
-  it("retorna 404 para organização da qual o usuário não é membro", async () => {
+  it("returns 404 for an organization the user is not a member of", async () => {
     const { orgId } = await setup();
     const outsider = await createUserWithToken(db, "outsider");
     const res = await app.inject({
       method: "POST",
       url: "/v1/projects",
       headers: authed(outsider.token),
-      payload: { organizationId: orgId, name: "Invasão" },
+      payload: { organizationId: orgId, name: "Invasion" },
     });
     expect(res.statusCode).toBe(404);
   });
 
-  it("pagina por cursor sem repetir nem perder itens", async () => {
+  it("paginates by cursor without repeating or losing items", async () => {
     const { token, orgId } = await setup();
     for (let i = 1; i <= 5; i++) {
       await app.inject({
@@ -182,7 +182,7 @@ describe("projetos", () => {
     expect(new Set(seen).size).toBe(5);
   });
 
-  it("retorna 400 para cursor inválido", async () => {
+  it("returns 400 for invalid cursor", async () => {
     const { token, orgId } = await setup();
     const res = await app.inject({
       method: "GET",

@@ -8,7 +8,7 @@ import { createUserWithToken } from "./db/fixtures.js";
 import { deployments, environments, githubRepoLinks } from "./db/schema.js";
 
 const keyring = testKeyring();
-const WEBHOOK_SECRET = "s3gr3do-de-teste";
+const WEBHOOK_SECRET = "t3st-s3cr3t";
 
 class FakeQueue {
   calls: { serviceInstanceId: string; versionNo: number }[] = [];
@@ -65,8 +65,8 @@ function sendWebhook(
   });
 }
 
-// Projeto com um serviço github_repo ligado ao repo via github_repo_links, na env production
-// (branch_rule = "main"). Devolve tudo que os testes de push precisam.
+// Project with a github_repo service linked to the repo via github_repo_links, in the production
+// env (branch_rule = "main"). Returns everything the push tests need.
 async function setupGithubProject() {
   const { token, org } = await createUserWithToken(db);
   const project = await app.inject({
@@ -77,7 +77,7 @@ async function setupGithubProject() {
   });
   const projectId = project.json().id as string;
 
-  // Toda criação de projeto já nasce com o ambiente "production"; só falta o branch_rule.
+  // Every project is created already with a "production" environment; only branch_rule is missing.
   await db.update(environments).set({ branchRule: "main" }).where(eq(environments.projectId, projectId));
 
   const service = await app.inject({
@@ -88,7 +88,7 @@ async function setupGithubProject() {
   });
   const instanceId = service.json().instances[0].id as string;
 
-  // Vínculo repo → projeto: hoje só existe via inserção direta (não há endpoint de link nesta fase).
+  // Repo → project link: today it only exists via direct insertion (no link endpoint at this stage).
   await db.insert(githubRepoLinks).values({
     projectId,
     installationId: BigInt(INSTALLATION_ID),
@@ -108,8 +108,8 @@ const pushPayload = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-describe("webhook do GitHub", () => {
-  it("assinatura inválida é recusada com 401, e nada é processado", async () => {
+describe("GitHub webhook", () => {
+  it("invalid signature is rejected with 401, and nothing is processed", async () => {
     await setupGithubProject();
 
     const res = await sendWebhook(pushPayload(), { signatureOverride: "sha256=" + "0".repeat(64) });
@@ -119,7 +119,7 @@ describe("webhook do GitHub", () => {
     expect(await db.select().from(deployments)).toHaveLength(0);
   });
 
-  it("assinatura ausente é recusada com 401", async () => {
+  it("missing signature is rejected with 401", async () => {
     const raw = JSON.stringify(pushPayload());
     const res = await app.inject({
       method: "POST",
@@ -130,7 +130,7 @@ describe("webhook do GitHub", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("push conhecido, com assinatura válida: cria o deployment em Queued e enfileira o reconciliador", async () => {
+  it("known push, with a valid signature: creates the deployment in Queued and enqueues the reconciler", async () => {
     const { instanceId } = await setupGithubProject();
 
     const res = await sendWebhook(pushPayload());
@@ -150,7 +150,7 @@ describe("webhook do GitHub", () => {
     expect(queue.calls).toEqual([{ serviceInstanceId: instanceId, versionNo: 1 }]);
   });
 
-  it("delivery repetida (mesmo X-GitHub-Delivery) não duplica o deployment", async () => {
+  it("a repeated delivery (same X-GitHub-Delivery) doesn't duplicate the deployment", async () => {
     await setupGithubProject();
     const deliveryId = randomUUID();
 
@@ -163,16 +163,16 @@ describe("webhook do GitHub", () => {
     expect(queue.calls).toHaveLength(1);
   });
 
-  it("push para uma branch sem ambiente correspondente não cria deployment", async () => {
+  it("a push to a branch with no matching environment creates no deployment", async () => {
     await setupGithubProject();
 
-    const res = await sendWebhook(pushPayload({ ref: "refs/heads/sem-ambiente" }));
+    const res = await sendWebhook(pushPayload({ ref: "refs/heads/no-environment" }));
 
     expect(res.statusCode).toBe(202);
     expect(await db.select().from(deployments)).toHaveLength(0);
   });
 
-  it("push substitui o deployment em voo da mesma instância (cancela o anterior)", async () => {
+  it("a push supersedes the in-flight deployment of the same instance (cancels the previous one)", async () => {
     const { instanceId } = await setupGithubProject();
     await sendWebhook(pushPayload());
 
@@ -185,7 +185,7 @@ describe("webhook do GitHub", () => {
     expect(queue.cancels).toEqual([{ deploymentId: rows.find((r) => r.versionNo === 1)!.id, serviceInstanceId: instanceId }]);
   });
 
-  it("installation deletado remove os vínculos da instalação, e um push seguinte é ignorado", async () => {
+  it("a deleted installation removes its links, and a subsequent push is ignored", async () => {
     await setupGithubProject();
 
     const del = await sendWebhook(
@@ -200,7 +200,7 @@ describe("webhook do GitHub", () => {
     expect(await db.select().from(deployments)).toHaveLength(0);
   });
 
-  it("installation_repositories removido some o vínculo só do repo removido", async () => {
+  it("a removed installation_repositories entry removes only the link for the removed repo", async () => {
     await setupGithubProject();
 
     const res = await sendWebhook(

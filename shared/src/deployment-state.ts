@@ -32,7 +32,7 @@ export class InvalidDeploymentTransitionError extends Error {
     public readonly from: DeploymentStatus,
     public readonly to: DeploymentStatus,
   ) {
-    super(`Transição de deployment inválida: ${from} → ${to}`);
+    super(`Invalid deployment transition: ${from} → ${to}`);
     this.name = "InvalidDeploymentTransitionError";
   }
 }

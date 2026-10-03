@@ -39,7 +39,7 @@ export function buildApp(
 
   app.get("/health", async () => ({ status: "ok" }));
 
-  // Tudo em /v1 exige token; o hook fica restrito a este escopo encapsulado.
+  // Everything under /v1 requires a token; the hook is scoped to this encapsulated context.
   app.register(
     async (v1) => {
       v1.addHook("onRequest", authenticate(db));
@@ -55,11 +55,11 @@ export function buildApp(
     { prefix: "/v1" },
   );
 
-  // Registado fora do escopo acima de propósito: o webhook do GitHub se autentica por HMAC
-  // (X-Hub-Signature-256), não por Bearer token, então não pode herdar o hook `authenticate`
-  // dos outros endpoints de /v1. Ficando numa instância encapsulada própria (mesmo prefixo
-  // "/v1"), o Fastify não propaga o onRequest de v1 para esta — a URL final é a mesma que a
-  // arquitetura (§10) e o resto do código espera: POST /v1/github/webhooks.
+  // Registered outside the scope above on purpose: the GitHub webhook authenticates via HMAC
+  // (X-Hub-Signature-256), not Bearer, so it can't inherit the `authenticate` hook from the
+  // other /v1 endpoints. By being its own encapsulated instance (same "/v1" prefix), Fastify
+  // doesn't propagate v1's onRequest to it — the final URL is the same one the architecture
+  // (§10) and the rest of the code expect: POST /v1/github/webhooks.
   app.register(githubRoutes, {
     db,
     keyring: opts.keyring,
@@ -79,7 +79,7 @@ export function buildApp(
   return app;
 }
 
-// Erros no formato RFC 9457 (problem+json), com `code` estável para o cliente.
+// Errors in RFC 9457 (problem+json) format, with a stable `code` for the client.
 function toProblem(err: unknown, instance: string) {
   if (err instanceof ApiError) {
     return { type: "about:blank", title: err.code, status: err.status, detail: err.message, code: err.code, instance };
@@ -89,7 +89,7 @@ function toProblem(err: unknown, instance: string) {
       type: "about:blank",
       title: "validation_failed",
       status: 400,
-      detail: "Corpo ou parâmetros inválidos.",
+      detail: "Invalid body or parameters.",
       code: "validation_failed",
       instance,
       errors: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
@@ -106,5 +106,5 @@ function toProblem(err: unknown, instance: string) {
       instance,
     };
   }
-  return { type: "about:blank", title: "internal_error", status: 500, detail: "Erro interno.", code: "internal_error", instance };
+  return { type: "about:blank", title: "internal_error", status: 500, detail: "Internal error.", code: "internal_error", instance };
 }

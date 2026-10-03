@@ -1,19 +1,20 @@
 import type { FastifyBaseLogger } from "fastify";
 
-// Pontos de extensão para o que a arquitetura (docs/architecture.md §8) chama de "token de
-// instalação" e "check runs": nesta fase não há credenciais reais de GitHub App no ambiente,
-// então cada interface tem uma implementação "noop" que só loga. Trocar por uma chamada real à
-// API do GitHub é só implementar a interface e injetar no lugar da noop (ver app.ts).
+// Extension points for what the architecture (docs/architecture.md §8) calls an "installation
+// token" and "check runs": at this stage there are no real GitHub App credentials in the
+// environment, so each interface has a "noop" implementation that only logs. Swapping in a real
+// call to the GitHub API is just implementing the interface and injecting it in place of the
+// noop (see app.ts).
 
 export interface GitHubInstallationTokenClient {
-  // Gera um token de instalação de curta duração (±1h). O resultado nunca é persistido no banco
-  // (architecture.md §8): quem chama usa o token na hora e descarta.
+  // Generates a short-lived installation token (~1h). The result is never persisted to the
+  // database (architecture.md §8): the caller uses the token on the spot and discards it.
   getInstallationToken(log: FastifyBaseLogger, installationId: bigint): Promise<string>;
 }
 
 export class NoopGitHubInstallationTokenClient implements GitHubInstallationTokenClient {
   async getInstallationToken(log: FastifyBaseLogger, installationId: bigint): Promise<string> {
-    log.info({ installationId: installationId.toString() }, "github: geração de token de instalação (noop)");
+    log.info({ installationId: installationId.toString() }, "github: installation token generation (noop)");
     return "noop-installation-token";
   }
 }
@@ -31,7 +32,7 @@ export interface GitHubCheckRunInput {
 }
 
 export interface GitHubChecksClient {
-  // Cria ou atualiza um check run ("Build", "Deploy", "Health" — architecture.md §8) no commit.
+  // Creates or updates a check run ("Build", "Deploy", "Health" — architecture.md §8) on the commit.
   upsertCheckRun(log: FastifyBaseLogger, input: GitHubCheckRunInput): Promise<void>;
 }
 

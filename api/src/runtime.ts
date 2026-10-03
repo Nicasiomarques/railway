@@ -1,8 +1,8 @@
-// Porta de leitura do runtime que a API usa para observabilidade (tail de logs e snapshot de métricas).
-// Espelha workers/src/runtime/adapter.ts (RuntimeAdapter): a API só lê o runtime, nunca escreve nele —
-// o reconciliador é o único escritor (architecture.md §5.2, §10). Fica com a sua própria cópia mínima
-// do contrato em vez de depender do pacote dos workers, que não é uma biblioteca (seu `index.ts` é um
-// processo com efeitos colaterais ao ser importado).
+// Read-only runtime port the API uses for observability (log tailing and metrics snapshot).
+// Mirrors workers/src/runtime/adapter.ts (RuntimeAdapter): the API only reads the runtime, never
+// writes to it — the reconciler is the only writer (architecture.md §5.2, §10). Keeps its own
+// minimal copy of the contract instead of depending on the workers package, which isn't a
+// library (its `index.ts` is a process with side effects on import).
 export interface WorkloadRef {
   name: string;
   namespace: string;
@@ -19,7 +19,7 @@ export interface RuntimeReader {
   tailLogs(ref: WorkloadRef, opts?: { since?: string }): AsyncIterable<string>;
 }
 
-// Mesma convenção de workers/src/runtime/adapter.ts: os dois lados precisam gerar a mesma referência.
+// Same convention as workers/src/runtime/adapter.ts: both sides need to produce the same reference.
 export function workloadName(serviceInstanceId: string): string {
   return `wl-${serviceInstanceId}`;
 }
