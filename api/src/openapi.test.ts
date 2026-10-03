@@ -30,14 +30,16 @@ describe("OpenAPI contract", () => {
     expect(doc.openapi).toBe("3.1.0");
   });
 
-  it("describes all 24 operations of the v1 API", async () => {
+  it("describes all 30 operations of the v1 API", async () => {
     const doc = await loadDoc();
     const ops = operations(doc);
-    expect(ops).toHaveLength(24);
+    expect(ops).toHaveLength(30);
     expect(ops.map((o) => `${o.method} ${o.path}`).sort()).toEqual(
       [
+        "post /v1/auth/login",
         "delete /v1/projects/{projectId}/connections",
         "post /v1/deployments/{deploymentId}/cancel",
+        "post /v1/deployments/{deploymentId}:rollback",
         "get /v1/deployments/{deploymentId}/logs",
         "get /v1/deployments/{deploymentId}",
         "get /v1/services/{instanceId}/deployments",
@@ -46,6 +48,7 @@ describe("OpenAPI contract", () => {
         "delete /v1/services/{instanceId}/variables/{key}",
         "post /v1/github/webhooks",
         "get /v1/organizations",
+        "get /v1/organizations/{organizationId}/audit-logs",
         "get /v1/projects",
         "get /v1/projects/{projectId}/connections",
         "get /v1/projects/{projectId}/environments",
@@ -60,6 +63,9 @@ describe("OpenAPI contract", () => {
         "post /v1/services/{instanceId}/domains",
         "get /v1/services/{instanceId}/domains",
         "delete /v1/services/{instanceId}/domains/{domainId}",
+        "post /v1/services/{instanceId}/volumes",
+        "get /v1/services/{instanceId}/volumes",
+        "post /v1/volumes/{volumeId}/backup",
       ].sort(),
     );
   });

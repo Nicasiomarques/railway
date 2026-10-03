@@ -5,7 +5,7 @@ import { buildApp } from "./app.js";
 import { testKeyring } from "./crypto/testing.js";
 import { db } from "./db/client.js";
 import { createUserWithToken } from "./db/fixtures.js";
-import { buildLogs, deploymentEvents, envSnapshots, memberships, deployments } from "./db/schema.js";
+import { auditLogs, buildLogs, deploymentEvents, envSnapshots, memberships, deployments } from "./db/schema.js";
 import { workloadName, type RuntimeReader, type WorkloadRef, type WorkloadStatus } from "./runtime.js";
 
 const keyring = testKeyring();
@@ -357,6 +357,130 @@ describe("cancellation", () => {
     const res = await app.inject({ method: "POST", url: `/v1/deployments/${id}/cancel`, headers: auth(token) });
 
     expect(res.statusCode).toBe(403);
+  });
+});
+
+describe("rollback", () => {
+  const rollback = (token: string, deploymentId: string) =>
+    // The literal URL the CLI calls (cli/src/commands/rollback.ts): a colon action, not a sub-resource.
+    app.inject({ method: "POST", url: `/v1/deployments/${deploymentId}:rollback`, headers: auth(token) });
+
+  it("the exact CLI URL (colon action, no slash) reaches the route", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+
+    const res = await rollback(token, id);
+
+    expect(res.statusCode).toBe(202);
+  });
+
+  it("creates a new version with the same image and EnvSnapshot as the target, not the current env", async () => {
+    const { token, instanceId } = await setupInstance();
+    await app.inject({
+      method: "PUT",
+      url: `/v1/services/${instanceId}/variables/GREETING`,
+      headers: auth(token),
+      payload: { value: "v1-value" },
+    });
+    const v1Id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${v1Id}`);
+    const [v1] = await db.select().from(deployments).where(sql`id = ${v1Id}`);
+
+    // v2 supersedes v1 (now Superseded, since we promote it below) and changes the env.
+    await app.inject({
+      method: "PUT",
+      url: `/v1/services/${instanceId}/variables/GREETING`,
+      headers: auth(token),
+      payload: { value: "v2-value" },
+    });
+    const v2Id = (await deploy(token, instanceId, DIGEST_2)).json().id as string;
+    await db.update(deployments).set({ status: "Superseded" }).where(sql`id = ${v1Id}`);
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${v2Id}`);
+
+    const res = await rollback(token, v1Id);
+
+    expect(res.statusCode).toBe(202);
+    const v3 = res.json();
+    expect(v3).toMatchObject({
+      versionNo: 3,
+      status: "Queued",
+      trigger: "rollback",
+      imageDigest: DIGEST,
+      rollbackOfId: v1Id,
+    });
+    const [v3Row] = await db.select().from(deployments).where(sql`id = ${v3.id}`);
+    // Same snapshot id as v1 (reused, not a fresh one resolved from the now-different current env).
+    expect(v3Row.envSnapshotId).toBe(v1.envSnapshotId);
+    expect(await db.select().from(envSnapshots)).toHaveLength(2); // v1's and v2's; none created for the rollback
+    expect(queue.calls).toContainEqual({ serviceInstanceId: instanceId, versionNo: 3 });
+  });
+
+  it("records an audit log entry for the rollback", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+
+    const res = await rollback(token, id);
+
+    const [log] = await db.select().from(auditLogs).where(sql`target = ${`deployment:${res.json().id}`}`);
+    expect(log).toMatchObject({ action: "deployment.rollback" });
+  });
+
+  it("a nonexistent deployment id returns 404", async () => {
+    const { token } = await setupInstance();
+
+    const res = await rollback(token, "00000000-0000-0000-0000-000000000000");
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("deployment_not_found");
+  });
+
+  it("someone without access gets the same 404 as a nonexistent id", async () => {
+    const owner = await setupInstance();
+    const id = (await deploy(owner.token, owner.instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+    const outsider = await createUserWithToken(db);
+
+    const res = await rollback(outsider.token, id);
+
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("deployment_not_found");
+  });
+
+  it("a viewer cannot roll back", async () => {
+    const { token, orgId, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+    await db.update(memberships).set({ role: "viewer" }).where(sql`organization_id = ${orgId}`);
+
+    const res = await rollback(token, id);
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("cannot roll back to a version that never ran (still Queued)", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+
+    const res = await rollback(token, id);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().code).toBe("not_rollback_target");
+  });
+
+  it("fails to enqueue: responds 503 and marks the rollback deployment as Failed", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+    queue.fail = true;
+
+    const res = await rollback(token, id);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().code).toBe("queue_unavailable");
+    const rows = await db.select().from(deployments).where(sql`version_no = 2`);
+    expect(rows[0].status).toBe("Failed");
   });
 });
 

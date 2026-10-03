@@ -25,7 +25,13 @@ const softDelete = {
 
 export const membershipRole = pgEnum("membership_role", ["owner", "admin", "member", "viewer"]);
 export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom"]);
-export const serviceSource = pgEnum("service_source", ["github_repo", "image", "template"]);
+export const serviceSource = pgEnum("service_source", [
+  "github_repo",
+  "image",
+  "template",
+  "postgres_template",
+  "redis_template",
+]);
 export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES);
 // "cron": created by the cron scheduler (workers/src/cron) when a cron service's schedule fires.
 export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy", "cron"]);
@@ -268,6 +274,25 @@ export const domains = pgTable(
     ...timestamps,
   },
   (t) => [uniqueIndex("domains_hostname_idx").on(t.hostname)],
+);
+
+// Volumes attach to a service instance (architecture.md §6: stateful workloads get a PVC + a
+// scheduled backup to object storage). backupState mirrors the backup worker's state machine
+// ("none" until the first run; "pending" while a backup is in flight; "completed"/"failed" after).
+export const volumes = pgTable(
+  "volumes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    serviceInstanceId: uuid("service_instance_id")
+      .notNull()
+      .references(() => serviceInstances.id),
+    mountPath: text("mount_path").notNull(),
+    sizeGb: integer("size_gb").notNull(),
+    backupState: text("backup_state").notNull().default("none"),
+    lastBackupAt: timestamp("last_backup_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index("volumes_instance_idx").on(t.serviceInstanceId)],
 );
 
 export const connections = pgTable(
