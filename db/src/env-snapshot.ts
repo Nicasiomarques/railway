@@ -1,7 +1,7 @@
 import { CryptoError, decryptValue, encryptValue, type Keyring } from "./crypto/envelope.js";
 
-// Snapshot de env: JSON de string → string, cifrado. O id do snapshot é o contexto (AAD),
-// então um payload copiado para outro snapshot não decifra.
+// Env snapshot: string → string JSON, encrypted. The snapshot id is the context (AAD),
+// so a payload copied to another snapshot won't decrypt.
 const snapshotContext = (snapshotId: string) => `env_snapshot:${snapshotId}`;
 
 export function sealEnvSnapshot(keyring: Keyring, snapshotId: string, env: Record<string, string>): string {
@@ -11,10 +11,10 @@ export function sealEnvSnapshot(keyring: Keyring, snapshotId: string, env: Recor
 export function openEnvSnapshot(keyring: Keyring, snapshotId: string, payload: string): Record<string, string> {
   const parsed: unknown = JSON.parse(decryptValue(keyring, payload, snapshotContext(snapshotId)));
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new CryptoError("Snapshot de env não é um objeto.");
+    throw new CryptoError("Env snapshot is not an object.");
   }
   for (const [key, value] of Object.entries(parsed)) {
-    if (typeof value !== "string") throw new CryptoError(`Valor do snapshot para ${key} não é texto.`);
+    if (typeof value !== "string") throw new CryptoError(`Snapshot value for ${key} is not a string.`);
   }
   return parsed as Record<string, string>;
 }

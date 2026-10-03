@@ -1,12 +1,13 @@
 import type { RuntimeAdapter, WorkloadRef, WorkloadSpec, WorkloadStatus } from "./adapter.js";
 import type { EnvironmentQuota, EnvironmentRuntime } from "./environment.js";
 
-// Runtime simulado: um rollout começa sem réplicas prontas e só fica pronto quando `markReady` é chamado.
+// Simulated runtime: a rollout starts with no ready replicas and only becomes ready when `markReady` is called.
 export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
   private readonly workloads = new Map<string, { spec: WorkloadSpec; readyReplicas: number }>();
   private readonly namespaces = new Map<string, Record<string, string>>();
   private readonly policies = new Set<string>();
   private readonly quotas = new Map<string, EnvironmentQuota>();
+  private readonly logs = new Map<string, string[]>();
 
   async ensureNamespace(namespace: string, labels: Record<string, string>): Promise<void> {
     this.namespaces.set(namespace, { ...this.namespaces.get(namespace), ...labels });
@@ -20,7 +21,7 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     this.quotas.set(namespace, structuredClone(quota));
   }
 
-  // Leituras para os testes verificarem o estado do ambiente simulado.
+  // Reads for tests to check the state of the simulated environment.
   environmentState(namespace: string) {
     return {
       labels: this.namespaces.get(namespace) ?? null,
@@ -45,16 +46,32 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     };
   }
 
-  // Simula as réplicas do workload ficando prontas (sondagem de saúde passando).
+  // Populates a workload's simulated log buffer; tests call this to control the tail's content.
+  seedLogs(name: string, lines: string[]): void {
+    this.logs.set(name, [...(this.logs.get(name) ?? []), ...lines]);
+  }
+
+  // Deterministic: returns whatever was populated via `seedLogs`, or a simulated line if the
+  // workload exists (no Loki/Vector pipeline in the MVP — architecture.md §9, direct runtime tail).
+  async *tailLogs({ name }: WorkloadRef, _opts: { since?: string } = {}): AsyncIterable<string> {
+    const seeded = this.logs.get(name);
+    if (seeded) {
+      for (const line of seeded) yield line;
+      return;
+    }
+    if (this.workloads.has(name)) yield `[sim] ${name}: workload running`;
+  }
+
+  // Simulates the workload's replicas becoming ready (health probe passing).
   markReady(name: string): void {
     const current = this.workloads.get(name);
-    if (!current) throw new Error(`workload ${name} não existe`);
+    if (!current) throw new Error(`workload ${name} does not exist`);
     current.readyReplicas = current.spec.replicas;
   }
 
   markUnready(name: string): void {
     const current = this.workloads.get(name);
-    if (!current) throw new Error(`workload ${name} não existe`);
+    if (!current) throw new Error(`workload ${name} does not exist`);
     current.readyReplicas = 0;
   }
 }

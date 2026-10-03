@@ -25,11 +25,11 @@ export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
       config: {
         openapi: {
           operationId: "createOrganization",
-          tags: ["Organizações"],
-          summary: "Cria uma organização; o criador vira owner",
+          tags: ["Organizations"],
+          summary: "Creates an organization; the creator becomes its owner",
           bodySchema: createOrganizationBody,
           idempotent: true,
-          success: { status: 201, description: "Organização criada", schema: OrganizationSchema },
+          success: { status: 201, description: "Organization created", schema: OrganizationSchema },
           errors: [409],
         },
       },
@@ -49,7 +49,7 @@ export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
           .from(organizations)
           .where(and(eq(organizations.slug, slug), isNull(organizations.deletedAt)))
           .limit(1);
-        if (taken) throw new ApiError(409, "slug_taken", `Slug "${slug}" já está em uso.`);
+        if (taken) throw new ApiError(409, "slug_taken", `Slug "${slug}" is already in use.`);
 
         const [org] = await tx
           .insert(organizations)
@@ -75,9 +75,9 @@ export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
       config: {
         openapi: {
           operationId: "listOrganizations",
-          tags: ["Organizações"],
-          summary: "Lista as organizações do usuário autenticado",
-          success: { status: 200, description: "Organizações", schema: listOf(OrganizationSummarySchema) },
+          tags: ["Organizations"],
+          summary: "Lists the authenticated user's organizations",
+          success: { status: 200, description: "Organizations", schema: listOf(OrganizationSummarySchema) },
         },
       },
     },

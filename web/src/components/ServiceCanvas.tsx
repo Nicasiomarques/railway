@@ -8,7 +8,7 @@ const NODE_H = 72;
 const GAP = 24;
 const COLS = 3;
 
-// Posições ficam no localStorage por projeto. Persistir no backend exige endpoint próprio.
+// Positions live in localStorage per project. Persisting them in the backend requires its own endpoint.
 function storageKey(projectId: string) {
   return `railway_like.canvas.${projectId}`;
 }
@@ -21,7 +21,7 @@ function loadPositions(projectId: string): Record<string, Pos> {
   }
 }
 
-// Posição padrão em grade para serviços que ainda não foram arrastados.
+// Default grid position for services that haven't been dragged yet.
 function defaultPos(index: number): Pos {
   return {
     x: GAP + (index % COLS) * (NODE_W + GAP),
@@ -53,7 +53,7 @@ export function ServiceCanvas({
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
 
-  // Um nó por serviço que tem instância no ambiente selecionado.
+  // One node per service that has an instance in the selected environment.
   const nodes: Node[] = services.flatMap((s) => {
     const inst = s.instances.find((i) => i.environmentName === environment);
     return inst ? [{ serviceId: s.id, instanceId: inst.id, name: s.name, kind: s.kind, source: s.source }] : [];
@@ -90,7 +90,7 @@ export function ServiceCanvas({
     drag.current = null;
   }
 
-  // Porta de saída: arrastar dela até outro nó cria a conexão.
+  // Output port: dragging from it to another node creates the connection.
   function onPortPointerDown(e: React.PointerEvent<HTMLDivElement>, instanceId: string) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -106,7 +106,7 @@ export function ServiceCanvas({
 
   function onPortPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     if (!linking) return;
-    // Pointer capture mantém o evento na porta; elementFromPoint acha o nó de destino.
+    // Pointer capture keeps the event on the port; elementFromPoint finds the target node.
     const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-instance-id]");
     const toInstanceId = target?.dataset.instanceId;
     if (toInstanceId && toInstanceId !== linking.fromInstanceId) {
@@ -130,11 +130,11 @@ export function ServiceCanvas({
       <div className="canvas-toolbar">
         <span className="muted">
           {canWrite
-            ? "Arraste os nós para organizar. Arraste a bolinha da direita até outro nó para conectar."
-            : "Arraste os nós para organizar."}
+            ? "Drag nodes to organize them. Drag the dot on the right to another node to connect them."
+            : "Drag nodes to organize them."}
         </span>
         <button className="ghost" onClick={resetLayout}>
-          Reorganizar
+          Rearrange
         </button>
       </div>
 
@@ -147,7 +147,7 @@ export function ServiceCanvas({
             return (
               <g key={`${c.fromInstanceId}-${c.toInstanceId}`} className={canWrite ? "link clickable" : "link"}>
                 <path d={d} className="link-hit" onClick={() => canWrite && onDisconnect(c.fromInstanceId, c.toInstanceId)}>
-                  <title>{canWrite ? "Clique para remover a conexão" : ""}</title>
+                  <title>{canWrite ? "Click to remove the connection" : ""}</title>
                 </path>
                 <path d={d} className="link-line" />
               </g>
@@ -159,7 +159,7 @@ export function ServiceCanvas({
           })()}
         </svg>
 
-        {nodes.length === 0 && <p className="muted canvas-empty">Nenhum serviço neste ambiente.</p>}
+        {nodes.length === 0 && <p className="muted canvas-empty">No services in this environment.</p>}
 
         {nodes.map((n, i) => {
           const pos = posOf(n, i);
@@ -185,7 +185,7 @@ export function ServiceCanvas({
                   onPointerMove={onPortPointerMove}
                   onPointerUp={onPortPointerUp}
                   onPointerCancel={() => setLinking(null)}
-                  title="Arraste para conectar"
+                  title="Drag to connect"
                 />
               )}
             </div>

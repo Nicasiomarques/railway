@@ -42,8 +42,8 @@ async function setup() {
   return { token, projectId: project.id as string, orgId: org.id, api: instanceOf("api"), db: instanceOf("db") };
 }
 
-describe("conexões", () => {
-  it("cria conexão entre instâncias do mesmo ambiente e lista", async () => {
+describe("connections", () => {
+  it("creates a connection between instances in the same environment and lists it", async () => {
     const { token, projectId, api: a, db: b } = await setup();
     const res = await app.inject({
       method: "POST",
@@ -59,7 +59,7 @@ describe("conexões", () => {
     ]);
   });
 
-  it("repetir a mesma conexão não duplica", async () => {
+  it("repeating the same connection does not duplicate it", async () => {
     const { token, projectId, api: a, db: b } = await setup();
     const payload = { fromInstanceId: a, toInstanceId: b };
     await app.inject({ method: "POST", url: `/v1/projects/${projectId}/connections`, headers: auth(token), payload });
@@ -70,7 +70,7 @@ describe("conexões", () => {
     expect(list.json().data).toHaveLength(1);
   });
 
-  it("rejeita conexão de um serviço consigo mesmo", async () => {
+  it("rejects a service connecting to itself", async () => {
     const { token, projectId, api: a } = await setup();
     const res = await app.inject({
       method: "POST",
@@ -82,7 +82,7 @@ describe("conexões", () => {
     expect(res.json().code).toBe("invalid_connection");
   });
 
-  it("rejeita instâncias de ambientes diferentes", async () => {
+  it("rejects instances from different environments", async () => {
     const { token, projectId, api: a } = await setup();
     await db.execute(sql`insert into environments (project_id, name, type) values (${projectId}, 'staging', 'staging')`);
     const stagingInstance = await db.execute<{ id: string }>(sql`
@@ -99,10 +99,10 @@ describe("conexões", () => {
       payload: { fromInstanceId: a, toInstanceId: stagingId },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().detail).toContain("mesmo ambiente");
+    expect(res.json().detail).toContain("same environment");
   });
 
-  it("rejeita instância de outro projeto", async () => {
+  it("rejects an instance from another project", async () => {
     const { token, projectId, api: a } = await setup();
     const outsider = await setup();
     const res = await app.inject({
@@ -115,7 +115,7 @@ describe("conexões", () => {
     expect(res.json().code).toBe("instance_not_found");
   });
 
-  it("impede viewer de criar e remover conexões", async () => {
+  it("prevents a viewer from creating or removing connections", async () => {
     const { token, projectId, orgId, api: a, db: b } = await setup();
     await app.inject({
       method: "POST",
@@ -143,7 +143,7 @@ describe("conexões", () => {
     expect(remove.statusCode).toBe(403);
   });
 
-  it("remove conexão e retorna 404 quando ela não existe", async () => {
+  it("removes a connection and returns 404 when it doesn't exist", async () => {
     const { token, projectId, api: a, db: b } = await setup();
     await app.inject({
       method: "POST",

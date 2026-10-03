@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiProblem, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
 import { DeploymentsPanel } from "./DeploymentsPanel";
+import { VariablesPanel } from "./VariablesPanel";
 
 const KINDS = ["web", "worker", "postgres", "redis"] as const;
 const SOURCES = ["github_repo", "image", "template"] as const;
@@ -47,12 +48,12 @@ export function ProjectDetail({
       });
       queryClient.invalidateQueries({ queryKey: ["connections", projectId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao criar conexão.");
+      setError(err instanceof ApiProblem ? err.message : "Error creating connection.");
     }
   }
 
   async function disconnect(fromInstanceId: string, toInstanceId: string) {
-    if (!window.confirm("Remover esta conexão?")) return;
+    if (!window.confirm("Remove this connection?")) return;
     setError(null);
     try {
       await api(`/projects/${projectId}/connections?fromInstanceId=${fromInstanceId}&toInstanceId=${toInstanceId}`, {
@@ -60,7 +61,7 @@ export function ProjectDetail({
       });
       queryClient.invalidateQueries({ queryKey: ["connections", projectId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao remover conexão.");
+      setError(err instanceof ApiProblem ? err.message : "Error removing connection.");
     }
   }
 
@@ -80,20 +81,20 @@ export function ProjectDetail({
       setForm({ ...form, name: "" });
       queryClient.invalidateQueries({ queryKey: ["services", projectId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao criar serviço.");
+      setError(err instanceof ApiProblem ? err.message : "Error creating service.");
     }
   }
 
   return (
     <section>
       <button className="ghost back" onClick={onBack}>
-        ← Projetos
+        ← Projects
       </button>
       <div className="section-head">
         <h2>{projectName}</h2>
       </div>
 
-      <h3>Ambientes</h3>
+      <h3>Environments</h3>
       <div className="chips">
         {environments.data?.map((env) => (
           <button
@@ -119,13 +120,13 @@ export function ProjectDetail({
         />
       )}
 
-      <h3>Serviços</h3>
+      <h3>Services</h3>
       {canWrite && (
         <form className="inline wrap" onSubmit={createService}>
           <input
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="nome-do-servico"
+            placeholder="service-name"
           />
           <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
             {KINDS.map((k) => (
@@ -138,7 +139,7 @@ export function ProjectDetail({
             ))}
           </select>
           <button type="submit" disabled={!form.name.trim()}>
-            Adicionar serviço
+            Add service
           </button>
         </form>
       )}
@@ -171,19 +172,22 @@ export function ProjectDetail({
             </li>
           );
         })}
-        {services.data?.length === 0 && <li className="muted">Nenhum serviço ainda.</li>}
+        {services.data?.length === 0 && <li className="muted">No services yet.</li>}
       </ul>
 
       {deploying && (
-        <DeploymentsPanel
-          key={deploying.instanceId}
-          instanceId={deploying.instanceId}
-          serviceName={deploying.serviceName}
-          environmentName={environment}
-          source={deploying.source}
-          canWrite={canWrite}
-          onClose={() => setDeploying(null)}
-        />
+        <>
+          <DeploymentsPanel
+            key={deploying.instanceId}
+            instanceId={deploying.instanceId}
+            serviceName={deploying.serviceName}
+            environmentName={environment}
+            source={deploying.source}
+            canWrite={canWrite}
+            onClose={() => setDeploying(null)}
+          />
+          <VariablesPanel key={`${deploying.instanceId}-vars`} instanceId={deploying.instanceId} canWrite={canWrite} />
+        </>
       )}
     </section>
   );

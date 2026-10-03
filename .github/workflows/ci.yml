@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: railway
+          POSTGRES_PASSWORD: railway
+          # Matches api/vitest.config.ts's default TEST_DATABASE_URL, so the test step below
+          # doesn't need to set it explicitly.
+          POSTGRES_DB: railway_like_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm turbo run typecheck
+
+      - name: Apply API schema migrations to the test database
+        working-directory: api
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: postgres://railway:railway@localhost:5432/railway_like_test
+
+      - name: Test API
+        working-directory: api
+        run: pnpm test
+
+      # Workers' non-integration tests use in-memory stores and need no external service.
+      # The *.integration.test.ts files need real Postgres/Redis/k8s infra (see infra/README.md)
+      # and aren't meant to run in this generic CI job.
+      - name: Test workers (unit tests only)
+        working-directory: workers
+        run: npx vitest run --exclude "**/*.integration.test.ts"

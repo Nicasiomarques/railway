@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
-// Código do detector, para embutir no pod de build. O arquivo fica ao lado deste módulo
-// (em src/ durante os testes, em dist/ depois do build).
+// Detector code, to embed in the build pod. The file sits next to this module
+// (in src/ during tests, in dist/ after the build).
 export function detectorSource(): string {
   return readFileSync(new URL("./detector.mjs", import.meta.url), "utf8");
 }

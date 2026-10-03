@@ -12,8 +12,8 @@ const REDIS_URL = process.env.REDIS_URL;
 const INSTANCE = "inst-int";
 const IMAGE = "registry.local/app@sha256:ccc";
 
-// Roda só com Redis disponível: REDIS_URL=redis://localhost:6379 pnpm test
-describe.skipIf(!REDIS_URL)("reconciliador com BullMQ e Redis reais", () => {
+// Runs only with Redis available: REDIS_URL=redis://localhost:6379 pnpm test
+describe.skipIf(!REDIS_URL)("reconciler with real BullMQ and Redis", () => {
   let connection: Redis;
   let queue: Queue<ReconcileJobData>;
 
@@ -43,23 +43,23 @@ describe.skipIf(!REDIS_URL)("reconciliador com BullMQ e Redis reais", () => {
       replicas: 1,
     });
 
-  it("dedupe: enfileirar a mesma versão duas vezes deixa um job só", async () => {
+  it("dedupe: enqueueing the same version twice leaves only one job", async () => {
     await enqueueReconcile(queue, { serviceInstanceId: INSTANCE, versionNo: 1 });
     await enqueueReconcile(queue, { serviceInstanceId: INSTANCE, versionNo: 1 });
     expect(await queue.getWaitingCount()).toBe(1);
   });
 
-  it("versão nova não fica presa atrás de um job ativo de outra versão", async () => {
+  it("a new version doesn't get stuck behind an active job of another version", async () => {
     await enqueueReconcile(queue, { serviceInstanceId: INSTANCE, versionNo: 1 });
     await enqueueReconcile(queue, { serviceInstanceId: INSTANCE, versionNo: 2 });
     expect(await queue.getWaitingCount()).toBe(2);
   });
 
-  it("caminho feliz: réplicas prontas levam o deployment a Running no primeiro job", async () => {
+  it("happy path: ready replicas take the deployment to Running on the first job", async () => {
     const store = new InMemoryDeploymentStore();
     const runtime = new InMemoryRuntime();
     deployment(store);
-    // Workload já aplicado com a mesma spec e pronto: o reconciliador só precisa promover.
+    // Workload already applied with the same spec and ready: the reconciler only needs to promote.
     await runtime.applyWorkload({ name: workloadName(INSTANCE), namespace: namespaceFor("env-int"), image: IMAGE, env: { PORT: "3000" }, replicas: 1 });
     runtime.markReady(workloadName(INSTANCE));
 
@@ -75,7 +75,7 @@ describe.skipIf(!REDIS_URL)("reconciliador com BullMQ e Redis reais", () => {
     expect(store.get("d-int")!.status).toBe("Running");
   }, 20_000);
 
-  it("retries esgotados: sem health check, o deployment vai para Failed com o motivo", async () => {
+  it("retries exhausted: with no health check, the deployment goes to Failed with the reason", async () => {
     const store = new InMemoryDeploymentStore();
     const runtime = new InMemoryRuntime();
     deployment(store);
@@ -91,12 +91,12 @@ describe.skipIf(!REDIS_URL)("reconciliador com BullMQ e Redis reais", () => {
 
     expect(result).toEqual({ kind: "failed", deploymentId: "d-int" });
     expect(store.get("d-int")!.status).toBe("Failed");
-    expect(store.events.at(-1)!.reason).toMatch(/após 2 tentativas/);
+    expect(store.events.at(-1)!.reason).toMatch(/after 2 attempts/);
   }, 20_000);
 });
 
-describe.skipIf(!REDIS_URL)("job de cancelamento de build na mesma fila", () => {
-  it("o worker apaga o build do deployment cancelado", async () => {
+describe.skipIf(!REDIS_URL)("build cancellation job on the same queue", () => {
+  it("the worker deletes the build of the cancelled deployment", async () => {
     const connection = new Redis(REDIS_URL!, { maxRetriesPerRequest: null });
     const queue = new Queue<ReconcileJobData | CancelBuildJobData>(DEPLOYMENTS_QUEUE, { connection });
     await queue.obliterate({ force: true });
@@ -112,7 +112,7 @@ describe.skipIf(!REDIS_URL)("job de cancelamento de build na mesma fila", () => 
     await events.close();
 
     expect(result).toEqual({ kind: "cancelled" });
-    expect(await builder.status({ deploymentId: "d-cancel", serviceInstanceId: INSTANCE })).toEqual({ kind: "failed", reason: "build cancelado" });
+    expect(await builder.status({ deploymentId: "d-cancel", serviceInstanceId: INSTANCE })).toEqual({ kind: "failed", reason: "build cancelled" });
     await queue.obliterate({ force: true });
     await queue.close();
     await connection.quit();

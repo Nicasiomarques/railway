@@ -7,6 +7,6 @@ export function slugify(input: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (!slug) throw new ApiError(400, "invalid_slug", "Não foi possível gerar um slug a partir do nome.");
+  if (!slug) throw new ApiError(400, "invalid_slug", "Could not generate a slug from the name.");
   return slug;
 }

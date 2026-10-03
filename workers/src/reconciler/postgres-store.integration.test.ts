@@ -8,7 +8,7 @@ import { addDeployment, resetDb, seedInstance } from "../test/fixtures.js";
 import { handleReconcileJob, reconcileInstance } from "./reconcile.js";
 import { PostgresDeploymentStore } from "./postgres-store.js";
 
-// Roda só com WORKERS_TEST_DATABASE_URL. Trunca tabelas: não rode junto com a suíte da API.
+// Runs only with WORKERS_TEST_DATABASE_URL. Truncates tables: don't run alongside the API suite.
 const DATABASE_URL = process.env.WORKERS_TEST_DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
@@ -23,7 +23,7 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     await resetDb(db);
   });
 
-  it("findActive devolve o deployment ativo mais recente, com réplicas e env", async () => {
+  it("findActive returns the most recent active deployment, with replicas and env", async () => {
     const instanceId = await seedInstance(db, 3);
     await addDeployment(db, instanceId, 1, "Running");
     const newest = await addDeployment(db, instanceId, 2, "Deploying");
@@ -33,13 +33,13 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     expect(found).toMatchObject({ id: newest, versionNo: 2, status: "Deploying", replicas: 3, env: { PORT: "3000" } });
   });
 
-  it("findActive devolve null quando só há Running", async () => {
+  it("findActive returns null when there's only Running", async () => {
     const instanceId = await seedInstance(db);
     await addDeployment(db, instanceId, 1, "Running");
     expect(await store.findActive(instanceId)).toBeNull();
   });
 
-  it("deployment sem image_digest é falha permanente: vai para Failed no banco, sem retries", async () => {
+  it("a deployment with no image_digest is a permanent failure: goes to Failed in the database, with no retries", async () => {
     const instanceId = await seedInstance(db);
     const id = await addDeployment(db, instanceId, 1, "Deploying", null);
 
@@ -50,19 +50,19 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     expect(row.status).toBe("Failed");
   });
 
-  it("setStatus é compare-and-set e grava o evento na mesma transação", async () => {
+  it("setStatus is compare-and-set and writes the event in the same transaction", async () => {
     const instanceId = await seedInstance(db);
     const id = await addDeployment(db, instanceId, 1, "Deploying");
 
     expect(await store.setStatus(id, "Running", "Failed")).toBe(false);
-    expect(await store.setStatus(id, "Deploying", "HealthChecking", "início do health check")).toBe(true);
+    expect(await store.setStatus(id, "Deploying", "HealthChecking", "health check started")).toBe(true);
 
     const events = await db.select().from(deploymentEvents);
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ fromStatus: "Deploying", toStatus: "HealthChecking", reason: "início do health check" });
+    expect(events[0]).toMatchObject({ fromStatus: "Deploying", toStatus: "HealthChecking", reason: "health check started" });
   });
 
-  it("promote troca o Running anterior por Superseded e promove o novo, com eventos", async () => {
+  it("promote swaps the previous Running for Superseded and promotes the new one, with events", async () => {
     const instanceId = await seedInstance(db);
     const previous = await addDeployment(db, instanceId, 1, "Running");
     const next = await addDeployment(db, instanceId, 2, "HealthChecking");
@@ -76,13 +76,13 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     expect(events.map((e) => e.toStatus).sort()).toEqual(["Running", "Superseded"]);
   });
 
-  it("promote recusa deployment que não está em HealthChecking", async () => {
+  it("promote refuses a deployment that isn't in HealthChecking", async () => {
     const instanceId = await seedInstance(db);
     const id = await addDeployment(db, instanceId, 1, "Deploying");
     expect(await store.promote(id)).toBe(false);
   });
 
-  it("reconcileInstance ponta a ponta sobre Postgres: Deploying → Running com rollout", async () => {
+  it("reconcileInstance end to end over Postgres: Deploying → Running with rollout", async () => {
     const instanceId = await seedInstance(db, 1);
     const previous = await addDeployment(db, instanceId, 1, "Running");
     const next = await addDeployment(db, instanceId, 2, "Deploying", "registry.local/app@sha256:bbb");

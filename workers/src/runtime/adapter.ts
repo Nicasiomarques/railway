@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
 
-// Porta do runtime (architecture.md §3). Só o reconciliador chama esta interface.
-// Implementações: InMemoryRuntime (testes) e K8sRuntime (k3s).
+// Runtime port (architecture.md §3). Only the reconciler calls this interface.
+// Implementations: InMemoryRuntime (tests) and K8sRuntime (k3s).
 
 export interface WorkloadSpec {
-  // Determinístico por instância, para o runtime achar o mesmo workload em cada chamada.
+  // Deterministic per instance, so the runtime finds the same workload on every call.
   name: string;
-  // Um namespace por ambiente (architecture.md §7.2): prod fica isolado de preview.
+  // One namespace per environment (architecture.md §7.2): prod stays isolated from preview.
   namespace: string;
-  // Imagem por digest (`registry/app@sha256:...`), nunca por tag.
+  // Image by digest (`registry/app@sha256:...`), never by tag.
   image: string;
   env: Record<string, string>;
   replicas: number;
@@ -22,14 +22,17 @@ export interface WorkloadRef {
 export interface WorkloadStatus {
   image: string;
   replicas: number;
-  // Réplicas prontas *da spec atual*. Pods de uma versão anterior não contam.
+  // Ready replicas *of the current spec*. Pods from a previous version don't count.
   readyReplicas: number;
 }
 
 export interface RuntimeAdapter {
-  // Upsert idempotente: aplicar o mesmo spec de novo não muda nada.
+  // Idempotent upsert: applying the same spec again changes nothing.
   applyWorkload(spec: WorkloadSpec): Promise<void>;
   getStatus(ref: WorkloadRef): Promise<WorkloadStatus | null>;
+  // Tails the workload's stdout/stderr. No Loki/Vector pipeline in the MVP (architecture.md §9):
+  // it's a direct read from the runtime, not storage. `since` is an RFC3339 timestamp; without it, shows everything available.
+  tailLogs(ref: WorkloadRef, opts?: { since?: string }): AsyncIterable<string>;
 }
 
 export function workloadName(serviceInstanceId: string): string {
@@ -40,7 +43,7 @@ export function namespaceFor(environmentId: string): string {
   return `env-${environmentId}`;
 }
 
-// Hash do que muda o comportamento do pod: imagem e env. Réplicas não entram: escalar não é rollout.
+// Hash of what changes the pod's behavior: image and env. Replicas aren't included: scaling isn't a rollout.
 export function specHash(spec: Pick<WorkloadSpec, "image" | "env">): string {
   const env = Object.entries(spec.env).sort(([a], [b]) => a.localeCompare(b));
   return createHash("sha256").update(JSON.stringify({ image: spec.image, env })).digest("hex").slice(0, 16);

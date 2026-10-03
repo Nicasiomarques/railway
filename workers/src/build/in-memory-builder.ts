@@ -1,6 +1,6 @@
 import type { BuildRequest, BuildStatus, Builder } from "./builder.js";
 
-// Builder simulado: o teste decide quando o build termina.
+// Simulated builder: the test decides when the build finishes.
 export class InMemoryBuilder implements Builder {
   private readonly builds = new Map<string, BuildStatus>();
   private readonly logBook = new Map<string, string>();
@@ -10,7 +10,7 @@ export class InMemoryBuilder implements Builder {
   }
 
   async status({ deploymentId }: Pick<BuildRequest, "deploymentId">): Promise<BuildStatus> {
-    return this.builds.get(deploymentId) ?? { kind: "failed", reason: "build não encontrado" };
+    return this.builds.get(deploymentId) ?? { kind: "failed", reason: "build not found" };
   }
 
   async logs({ deploymentId }: Pick<BuildRequest, "deploymentId">): Promise<string> {
@@ -22,7 +22,7 @@ export class InMemoryBuilder implements Builder {
   }
 
   async cancel({ deploymentId }: Pick<BuildRequest, "deploymentId">): Promise<void> {
-    this.builds.set(deploymentId, { kind: "failed", reason: "build cancelado" });
+    this.builds.set(deploymentId, { kind: "failed", reason: "build cancelled" });
   }
 
   finish(deploymentId: string, outcome: BuildStatus): void {

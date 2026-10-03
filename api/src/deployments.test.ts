@@ -6,6 +6,7 @@ import { testKeyring } from "./crypto/testing.js";
 import { db } from "./db/client.js";
 import { createUserWithToken } from "./db/fixtures.js";
 import { buildLogs, deploymentEvents, envSnapshots, memberships, deployments } from "./db/schema.js";
+import { workloadName, type RuntimeReader, type WorkloadRef, type WorkloadStatus } from "./runtime.js";
 
 const keyring = testKeyring();
 
@@ -14,7 +15,7 @@ class FakeQueue {
   cancels: { deploymentId: string; serviceInstanceId: string }[] = [];
   fail = false;
   async enqueueReconcile(data: { serviceInstanceId: string; versionNo: number }) {
-    if (this.fail) throw new Error("redis fora do ar");
+    if (this.fail) throw new Error("redis is down");
     this.calls.push(data);
   }
   async enqueueCancelBuild(data: { deploymentId: string; serviceInstanceId: string }) {
@@ -22,14 +23,29 @@ class FakeQueue {
   }
 }
 
-// Uma única instância: a app guarda a referência, então o teste reinicia o estado em vez de trocar o objeto.
+// Fake runtime for the SSE and metrics tests: tests populate `statuses`/`logs` by workload name.
+class FakeRuntime implements RuntimeReader {
+  statuses = new Map<string, WorkloadStatus | null>();
+  logs = new Map<string, string[]>();
+  async getStatus(ref: WorkloadRef): Promise<WorkloadStatus | null> {
+    return this.statuses.get(ref.name) ?? null;
+  }
+  async *tailLogs(ref: WorkloadRef): AsyncIterable<string> {
+    for (const line of this.logs.get(ref.name) ?? []) yield line;
+  }
+}
+
+// A single instance: the app holds the reference, so the test resets the state instead of swapping the object.
 const queue = new FakeQueue();
-const app = buildApp(db, { keyring, queue });
+const runtime = new FakeRuntime();
+const app = buildApp(db, { keyring, queue, runtime });
 
 beforeEach(async () => {
   queue.calls = [];
   queue.cancels = [];
   queue.fail = false;
+  runtime.statuses.clear();
+  runtime.logs.clear();
   const { rows } = await db.execute<{ tablename: string }>(
     sql`select tablename from pg_tables where schemaname = 'public' and tablename <> '__drizzle_migrations'`,
   );
@@ -44,7 +60,7 @@ const auth = (token: string, extra: Record<string, string> = {}) => ({ authoriza
 const DIGEST = `registry.local/app@sha256:${"a".repeat(64)}`;
 const DIGEST_2 = `registry.local/app@sha256:${"b".repeat(64)}`;
 
-// Projeto com um serviço: devolve a instância do ambiente production.
+// Project with one service: returns the production environment's instance.
 async function setupInstance() {
   const { token, org } = await createUserWithToken(db);
   const project = await app.inject({
@@ -72,8 +88,8 @@ const deploy = (token: string, instanceId: string, imageDigest = DIGEST, extra: 
     payload: { imageDigest },
   });
 
-describe("criar deployment", () => {
-  it("nasce em Queued, com versão 1, e enfileira o reconciliador", async () => {
+describe("creating a deployment", () => {
+  it("starts as Queued, with version 1, and enqueues the reconciler", async () => {
     const { token, instanceId } = await setupInstance();
 
     const res = await deploy(token, instanceId);
@@ -83,19 +99,19 @@ describe("criar deployment", () => {
     expect(queue.calls).toEqual([{ serviceInstanceId: instanceId, versionNo: 1 }]);
   });
 
-  it("grava um snapshot de env cifrado com as variáveis resolvidas", async () => {
+  it("stores an encrypted env snapshot with the resolved variables", async () => {
     const { token, instanceId } = await setupInstance();
     await app.inject({
       method: "PUT",
       url: `/v1/services/${instanceId}/variables/GREETING`,
       headers: auth(token),
-      payload: { value: "olá" },
+      payload: { value: "hello" },
     });
     await app.inject({
       method: "PUT",
       url: `/v1/services/${instanceId}/variables/DB_PASSWORD`,
       headers: auth(token),
-      payload: { value: "segredo", isSecret: true },
+      payload: { value: "secret", isSecret: true },
     });
 
     const res = await deploy(token, instanceId);
@@ -104,12 +120,12 @@ describe("criar deployment", () => {
 
     expect(res.statusCode).toBe(202);
     expect(dep.envSnapshotId).toBe(snap.id);
-    // O payload no banco não é texto puro, e abre só com o contexto do próprio snapshot.
-    expect(snap.payloadEnc).not.toContain("segredo");
-    expect(openEnvSnapshot(keyring, snap.id, snap.payloadEnc)).toEqual({ GREETING: "olá", DB_PASSWORD: "segredo" });
+    // The payload in the database isn't plain text, and only opens with the snapshot's own context.
+    expect(snap.payloadEnc).not.toContain("secret");
+    expect(openEnvSnapshot(keyring, snap.id, snap.payloadEnc)).toEqual({ GREETING: "hello", DB_PASSWORD: "secret" });
   });
 
-  it("nova versão cancela a que estava em voo e preserva o histórico", async () => {
+  it("a new version cancels the one in flight and preserves the history", async () => {
     const { token, instanceId } = await setupInstance();
     await deploy(token, instanceId, DIGEST);
 
@@ -121,14 +137,14 @@ describe("criar deployment", () => {
     expect(rows.find((r) => r.versionNo === 2)!.status).toBe("Queued");
   });
 
-  it("imagem sem digest é recusada", async () => {
+  it("an image without a digest is rejected", async () => {
     const { token, instanceId } = await setupInstance();
     const res = await deploy(token, instanceId, "registry.local/app:latest");
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("validation_failed");
   });
 
-  it("viewer não cria deployment", async () => {
+  it("viewer cannot create a deployment", async () => {
     const { token, orgId, instanceId } = await setupInstance();
     await db.update(memberships).set({ role: "viewer" }).where(sql`organization_id = ${orgId}`);
 
@@ -137,7 +153,7 @@ describe("criar deployment", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("Idempotency-Key repetida devolve o mesmo deployment, sem criar outro", async () => {
+  it("a repeated Idempotency-Key returns the same deployment, without creating another one", async () => {
     const { token, instanceId } = await setupInstance();
     const first = await deploy(token, instanceId, DIGEST, { "idempotency-key": "k-1" });
     const again = await deploy(token, instanceId, DIGEST, { "idempotency-key": "k-1" });
@@ -146,7 +162,7 @@ describe("criar deployment", () => {
     expect(await db.select().from(deployments)).toHaveLength(1);
   });
 
-  it("falha ao enfileirar: responde 503 e marca o deployment como Failed", async () => {
+  it("fails to enqueue: responds 503 and marks the deployment as Failed", async () => {
     const { token, instanceId } = await setupInstance();
     queue.fail = true;
 
@@ -159,8 +175,8 @@ describe("criar deployment", () => {
   });
 });
 
-describe("consultar deployments", () => {
-  it("lista do mais recente para o mais antigo", async () => {
+describe("querying deployments", () => {
+  it("lists from most recent to oldest", async () => {
     const { token, instanceId } = await setupInstance();
     await deploy(token, instanceId, DIGEST);
     await deploy(token, instanceId, DIGEST_2);
@@ -170,7 +186,7 @@ describe("consultar deployments", () => {
     expect(res.json().data.map((d: { versionNo: number }) => d.versionNo)).toEqual([2, 1]);
   });
 
-  it("detalhe traz o histórico de estados", async () => {
+  it("the detail view carries the state history", async () => {
     const { token, instanceId } = await setupInstance();
     const created = await deploy(token, instanceId);
     const id = created.json().id as string;
@@ -179,11 +195,11 @@ describe("consultar deployments", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().events).toEqual([
-      expect.objectContaining({ fromStatus: null, toStatus: "Queued", reason: "criado" }),
+      expect.objectContaining({ fromStatus: null, toStatus: "Queued", reason: "created" }),
     ]);
   });
 
-  it("outra organização recebe o mesmo 404 de um id inexistente", async () => {
+  it("another organization gets the same 404 as a nonexistent id", async () => {
     const owner = await setupInstance();
     const created = await deploy(owner.token, owner.instanceId);
     const outsider = await createUserWithToken(db);
@@ -205,7 +221,7 @@ describe("consultar deployments", () => {
   });
 });
 
-describe("origem do serviço e do deployment", () => {
+describe("service and deployment source", () => {
   const SHA = "c6ba3ae5b6c700cc04950ff8389d8a37f31e5913";
 
   async function githubInstance() {
@@ -220,7 +236,7 @@ describe("origem do serviço e do deployment", () => {
     return { token, instanceId: service.json().instances[0].id as string };
   }
 
-  it("serviço github_repo exige repoUrl e não aceita imagem sem build", async () => {
+  it("a github_repo service requires repoUrl and doesn't accept an image without a build", async () => {
     const { token, org } = await createUserWithToken(db);
     const project = await app.inject({ method: "POST", url: "/v1/projects", headers: auth(token), payload: { organizationId: org.id, name: "Web" } });
     const res = await app.inject({
@@ -230,10 +246,10 @@ describe("origem do serviço e do deployment", () => {
       payload: { name: "app", kind: "web", source: "github_repo" },
     });
     expect(res.statusCode).toBe(400);
-    expect(JSON.stringify(res.json())).toMatch(/repoUrl é obrigatória/);
+    expect(JSON.stringify(res.json())).toMatch(/repoUrl is required/);
   });
 
-  it("repoUrl em serviço de imagem é recusado", async () => {
+  it("repoUrl on an image service is rejected", async () => {
     const { token, org } = await createUserWithToken(db);
     const project = await app.inject({ method: "POST", url: "/v1/projects", headers: auth(token), payload: { organizationId: org.id, name: "Web" } });
     const res = await app.inject({
@@ -245,7 +261,7 @@ describe("origem do serviço e do deployment", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("github_repo aceita commitSha e grava o commit", async () => {
+  it("github_repo accepts commitSha and stores the commit", async () => {
     const { token, instanceId } = await githubInstance();
     const res = await app.inject({
       method: "POST",
@@ -257,14 +273,14 @@ describe("origem do serviço e do deployment", () => {
     expect(res.json()).toMatchObject({ commitSha: SHA, imageDigest: null, status: "Queued" });
   });
 
-  it("github_repo recusa imageDigest direto", async () => {
+  it("github_repo rejects imageDigest directly", async () => {
     const { token, instanceId } = await githubInstance();
     const res = await deploy(token, instanceId, DIGEST);
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("source_mismatch");
   });
 
-  it("serviço de imagem recusa commitSha", async () => {
+  it("an image service rejects commitSha", async () => {
     const { token, instanceId } = await setupInstance();
     const res = await app.inject({
       method: "POST",
@@ -275,7 +291,7 @@ describe("origem do serviço e do deployment", () => {
     expect(res.json().code).toBe("source_mismatch");
   });
 
-  it("corpo com as duas origens, ou sem nenhuma, é recusado", async () => {
+  it("a body with both sources, or with neither, is rejected", async () => {
     const { token, instanceId } = await setupInstance();
     const both = await app.inject({
       method: "POST",
@@ -289,8 +305,8 @@ describe("origem do serviço e do deployment", () => {
   });
 });
 
-describe("cancelamento", () => {
-  it("nova versão enfileira o cancelamento do build que ela substituiu", async () => {
+describe("cancellation", () => {
+  it("a new version enqueues the cancellation of the build it superseded", async () => {
     const { token, instanceId } = await setupInstance();
     const first = await deploy(token, instanceId, DIGEST);
     await deploy(token, instanceId, DIGEST_2);
@@ -298,7 +314,7 @@ describe("cancelamento", () => {
     expect(queue.cancels).toEqual([{ deploymentId: first.json().id, serviceInstanceId: instanceId }]);
   });
 
-  it("POST cancel marca Cancelled, grava o evento e enfileira o cancelamento do build", async () => {
+  it("POST cancel marks it Cancelled, records the event and enqueues the build cancellation", async () => {
     const { token, instanceId } = await setupInstance();
     const created = await deploy(token, instanceId, DIGEST);
     const id = created.json().id as string;
@@ -308,11 +324,11 @@ describe("cancelamento", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ id, status: "Cancelled" });
     const events = await db.select().from(deploymentEvents).where(sql`deployment_id = ${id}`);
-    expect(events.map((e) => e.reason)).toContain("cancelado pelo usuário");
+    expect(events.map((e) => e.reason)).toContain("cancelled by user");
     expect(queue.cancels).toEqual([{ deploymentId: id, serviceInstanceId: instanceId }]);
   });
 
-  it("cancelar de novo é recusado com 409", async () => {
+  it("cancelling again is rejected with 409", async () => {
     const { token, instanceId } = await setupInstance();
     const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
     await app.inject({ method: "POST", url: `/v1/deployments/${id}/cancel`, headers: auth(token) });
@@ -323,7 +339,7 @@ describe("cancelamento", () => {
     expect(again.json().code).toBe("not_cancellable");
   });
 
-  it("Running não pode ser cancelado", async () => {
+  it("Running cannot be cancelled", async () => {
     const { token, instanceId } = await setupInstance();
     const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
     await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
@@ -333,7 +349,7 @@ describe("cancelamento", () => {
     expect(res.statusCode).toBe(409);
   });
 
-  it("viewer não cancela deployment", async () => {
+  it("viewer cannot cancel a deployment", async () => {
     const { token, orgId, instanceId } = await setupInstance();
     const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
     await db.update(memberships).set({ role: "viewer" }).where(sql`organization_id = ${orgId}`);
@@ -344,8 +360,8 @@ describe("cancelamento", () => {
   });
 });
 
-describe("logs do build", () => {
-  it("devolve o último retrato salvo, ou vazio antes de qualquer leitura", async () => {
+describe("build logs", () => {
+  it("returns the last saved snapshot, or empty before any reading", async () => {
     const { token, instanceId } = await setupInstance();
     const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
 
@@ -358,15 +374,100 @@ describe("logs do build", () => {
     expect(saved.json().updatedAt).not.toBeNull();
   });
 
-  it("quem não tem acesso recebe o mesmo 404 de um id inexistente", async () => {
+  it("someone without access gets the same 404 as a nonexistent id", async () => {
     const owner = await setupInstance();
     const id = (await deploy(owner.token, owner.instanceId, DIGEST)).json().id as string;
-    await db.insert(buildLogs).values({ deploymentId: id, content: "segredo?" });
+    await db.insert(buildLogs).values({ deploymentId: id, content: "secret?" });
     const outsider = await createUserWithToken(db);
 
     const foreign = await app.inject({ method: "GET", url: `/v1/deployments/${id}/logs`, headers: auth(outsider.token) });
 
     expect(foreign.statusCode).toBe(404);
     expect(foreign.json().code).toBe("deployment_not_found");
+  });
+});
+
+describe("SSE log tailing", () => {
+  it("stream=build opens the SSE and sends the saved snapshot's lines, then closes", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.insert(buildLogs).values({ deploymentId: id, content: "=== build ===\nok" });
+    // Build already finished: the route sends what it has and closes, instead of waiting for more lines.
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+
+    const res = await app.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=build`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.body).toBe("data: === build ===\n\ndata: ok\n\n");
+  });
+
+  it("stream=runtime opens the SSE and sends the runtime's tailLogs lines", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    runtime.logs.set(workloadName(instanceId), ["line a", "line b"]);
+
+    const res = await app.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=runtime`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.body).toBe("data: line a\n\ndata: line b\n\n");
+  });
+
+  it("stream=runtime with no runtime configured on the API responds 503", async () => {
+    const bareApp = buildApp(db, { keyring, queue });
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+
+    const res = await bareApp.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=runtime`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().code).toBe("runtime_unavailable");
+    await bareApp.close();
+  });
+
+  it("a nonexistent deployment returns 404 even with stream", async () => {
+    const { token } = await setupInstance();
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/deployments/00000000-0000-0000-0000-000000000000/logs?stream=build`,
+      headers: auth(token),
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("metrics", () => {
+  it("returns the runtime snapshot (replicas, image and state)", async () => {
+    const { token, instanceId } = await setupInstance();
+    runtime.statuses.set(workloadName(instanceId), { image: DIGEST, replicas: 2, readyReplicas: 2 });
+
+    const res = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/metrics`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ instanceId, replicas: 2, readyReplicas: 2, image: DIGEST, status: "running" });
+  });
+
+  it("with no workload in the runtime, returns stopped state with zero replicas", async () => {
+    const { token, instanceId } = await setupInstance();
+
+    const res = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/metrics`, headers: auth(token) });
+
+    expect(res.json()).toEqual({ instanceId, replicas: 0, readyReplicas: 0, image: null, status: "stopped" });
+  });
+
+  it("whoever has no access to the instance gets 404", async () => {
+    const owner = await setupInstance();
+    const outsider = await createUserWithToken(db);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/services/${owner.instanceId}/metrics`,
+      headers: auth(outsider.token),
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });

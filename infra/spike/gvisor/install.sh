@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Instala o gVisor (runsc) nos nós do cluster k3d e cria o RuntimeClass `gvisor`.
-# Testado com k3s v1.35 em Docker Desktop (arm64). Os nós são imagens mínimas: os binários vão para /bin.
+# Installs gVisor (runsc) on the k3d cluster's nodes and creates the `gvisor` RuntimeClass.
+# Tested with k3s v1.35 on Docker Desktop (arm64). The nodes are minimal images: binaries go to /bin.
 set -euo pipefail
 
 CLUSTER="${CLUSTER:-railway-dev}"
@@ -11,7 +11,7 @@ ARCH="$(docker exec "${NODES[0]}" uname -m)"
 case "$ARCH" in
   aarch64) GV_ARCH=aarch64 ;;
   x86_64) GV_ARCH=x86_64 ;;
-  *) echo "arquitetura não suportada: $ARCH" >&2; exit 1 ;;
+  *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
 WORK="$(mktemp -d)"
@@ -27,13 +27,13 @@ for node in "${NODES[@]}"; do
   docker cp "$WORK/runsc" "$node:/bin/runsc"
   docker cp "$WORK/containerd-shim-runsc-v1" "$node:/bin/containerd-shim-runsc-v1"
   docker exec "$node" chmod +x /bin/runsc /bin/containerd-shim-runsc-v1
-  # k3s regenera config.toml a partir do template: o template inclui o base e acrescenta o runsc.
+  # k3s regenerates config.toml from the template: the template includes the base and adds runsc.
   docker exec "$node" sh -c 'cd /var/lib/rancher/k3s/agent/etc/containerd && {
     echo "{{ template \"base\" . }}"; echo "";
     echo "[plugins.'"'"'io.containerd.cri.v1.runtime'"'"'.containerd.runtimes.runsc]";
     echo "  runtime_type = \"io.containerd.runsc.v1\"";
   } > config.toml.tmpl'
-  echo "nó configurado: $node"
+  echo "node configured: $node"
 done
 
 for node in "${NODES[@]}"; do docker restart "$node" >/dev/null; done
@@ -48,4 +48,4 @@ handler: runsc
 YAML
 kubectl --context "$CTX" apply -f "$WORK/runtimeclass.yaml"
 rm -rf "$WORK"
-echo "gVisor instalado. Verifique com: kubectl --context $CTX -n default run gv --rm -it --restart=Never --image=alpine:3.20 --overrides='{\"spec\":{\"runtimeClassName\":\"gvisor\"}}' -- uname -a"
+echo "gVisor installed. Verify with: kubectl --context $CTX -n default run gv --rm -it --restart=Never --image=alpine:3.20 --overrides='{\"spec\":{\"runtimeClassName\":\"gvisor\"}}' -- uname -a"

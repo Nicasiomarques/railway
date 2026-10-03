@@ -1,6 +1,6 @@
 import type { EnvironmentProvisioningStore, EnvironmentRecord, ProvisioningStatus, ProvisioningStep } from "./saga.js";
 
-// Store em memória da saga, para testes. Mesmo contrato do Postgres: passos concluídos não se repetem.
+// In-memory saga store, for tests. Same contract as Postgres: completed steps don't repeat.
 export class InMemoryEnvironmentStore implements EnvironmentProvisioningStore {
   private readonly envs = new Map<string, EnvironmentRecord & { error: string | null }>();
 
@@ -36,7 +36,7 @@ export class InMemoryEnvironmentStore implements EnvironmentProvisioningStore {
     env.error = reason;
   }
 
-  // Leitura para os testes.
+  // Read for the tests.
   snapshot(environmentId: string): (EnvironmentRecord & { error: string | null }) | undefined {
     const env = this.envs.get(environmentId);
     return env && { ...env, completedSteps: [...env.completedSteps] };
@@ -48,7 +48,7 @@ export class InMemoryEnvironmentStore implements EnvironmentProvisioningStore {
 
   private require(environmentId: string) {
     const env = this.envs.get(environmentId);
-    if (!env) throw new Error(`ambiente ${environmentId} não existe`);
+    if (!env) throw new Error(`environment ${environmentId} does not exist`);
     return env;
   }
 }

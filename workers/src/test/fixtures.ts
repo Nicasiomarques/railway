@@ -2,15 +2,15 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { deployments, environments, organizations, projects, serviceInstances, services, type Db } from "@railway-like/db";
 
-// Zera as tabelas de deployment. Só use em banco de teste dedicado ou sem outra suíte rodando em paralelo.
+// Resets the deployment tables. Only use on a dedicated test database, or with no other suite running in parallel.
 export async function resetDb(db: Db): Promise<void> {
   await db.execute(
     sql`truncate deployment_events, env_snapshots, deployments, service_instances, services, environments, projects, organizations restart identity cascade`,
   );
 }
 
-// Cria org → projeto → ambiente → serviço → instância; devolve o id da instância.
-// Slugs únicos por chamada: um teste pode criar várias instâncias.
+// Creates org → project → environment → service → instance; returns the instance id.
+// Unique slugs per call: a test can create several instances.
 export async function seedInstance(db: Db, replicas = 1): Promise<string> {
   const suffix = randomUUID().slice(0, 8);
   const [org] = await db.insert(organizations).values({ name: "Acme", slug: `acme-${suffix}` }).returning();

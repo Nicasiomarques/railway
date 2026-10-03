@@ -7,7 +7,7 @@ import type { DeploymentRecord, DeploymentStore } from "./store.js";
 export interface ReconcilerDeps {
   store: DeploymentStore;
   runtime: RuntimeAdapter;
-  // Obrigatório para deployments de repositório. Sem ele, esses deployments falham de forma permanente.
+  // Required for repository deployments. Without it, those deployments fail permanently.
   builder?: Builder;
 }
 
@@ -17,8 +17,8 @@ export type ReconcileResult =
   | { kind: "pending"; deploymentId: string; reason: string; phase: "Building" | "HealthChecking" }
   | { kind: "failed"; deploymentId: string };
 
-// Converge o runtime da instância para o deployment ativo. Idempotente: pode rodar várias vezes
-// e o resultado é o mesmo. Só este módulo escreve no runtime.
+// Converges the instance's runtime to the active deployment. Idempotent: can run multiple times
+// with the same result. Only this module writes to the runtime.
 export async function reconcileInstance(deps: ReconcilerDeps, serviceInstanceId: string): Promise<ReconcileResult> {
   const maxRaces = 3;
   for (let i = 0; i < maxRaces; i++) {
@@ -27,18 +27,18 @@ export async function reconcileInstance(deps: ReconcilerDeps, serviceInstanceId:
 
     const result = await reconcileDeployment(deps, active);
     if (result) return result;
-    // Outro escritor mexeu no deployment entre a leitura e a escrita: relê e tenta de novo.
+    // Another writer touched the deployment between the read and the write: re-read and try again.
   }
-  throw new Error(`reconcile ${serviceInstanceId}: estado mudou durante toda a tentativa`);
+  throw new Error(`reconcile ${serviceInstanceId}: state kept changing throughout the attempt`);
 }
 
-// Retorna null quando perdeu uma corrida de escrita e o chamador deve reler o estado.
+// Returns null when it lost a write race and the caller should re-read the state.
 async function reconcileDeployment(deps: ReconcilerDeps, d: DeploymentRecord): Promise<ReconcileResult | null> {
   let rec = d;
   let phase: DeploymentStatus = d.status;
 
   if (phase === "Queued") {
-    const reason = rec.imageDigest ? "build dispensado: imagem fornecida por digest" : "build iniciado";
+    const reason = rec.imageDigest ? "build skipped: image provided by digest" : "build started";
     if (!(await advance(deps.store, rec.id, "Queued", "Building", reason))) return null;
     phase = "Building";
   }
@@ -48,12 +48,12 @@ async function reconcileDeployment(deps: ReconcilerDeps, d: DeploymentRecord): P
       const outcome = await runBuild(deps, rec);
       await captureBuildLogs(deps, rec);
       if (outcome.kind === "running") {
-        return { kind: "pending", deploymentId: rec.id, reason: "build em andamento", phase: "Building" };
+        return { kind: "pending", deploymentId: rec.id, reason: "build in progress", phase: "Building" };
       }
-      if (outcome.kind === "failed") throw new PermanentError(`build falhou: ${outcome.reason}`, rec.id);
+      if (outcome.kind === "failed") throw new PermanentError(`build failed: ${outcome.reason}`, rec.id);
       if (!(await deps.store.setImageDigest(rec.id, outcome.imageDigest))) return null;
       rec = { ...rec, imageDigest: outcome.imageDigest };
-      if (!(await advance(deps.store, rec.id, "Building", "Deploying", "build concluído"))) return null;
+      if (!(await advance(deps.store, rec.id, "Building", "Deploying", "build finished"))) return null;
     } else if (!(await advance(deps.store, rec.id, "Building", "Deploying"))) {
       return null;
     }
@@ -61,7 +61,7 @@ async function reconcileDeployment(deps: ReconcilerDeps, d: DeploymentRecord): P
   }
 
   const image = rec.imageDigest;
-  if (!image) throw new PermanentError(`deployment ${rec.id} sem image_digest: não é possível convergir`, rec.id);
+  if (!image) throw new PermanentError(`deployment ${rec.id} has no image_digest: cannot converge`, rec.id);
   const spec = specFor({ ...rec, imageDigest: image });
 
   if (phase === "Deploying") {
@@ -69,29 +69,29 @@ async function reconcileDeployment(deps: ReconcilerDeps, d: DeploymentRecord): P
     if (!(await advance(deps.store, rec.id, "Deploying", "HealthChecking"))) return null;
   }
 
-  // A partir daqui o deployment está em HealthChecking.
+  // From here on the deployment is in HealthChecking.
   const status = await deps.runtime.getStatus({ name: spec.name, namespace: spec.namespace });
   if (!isReady(status, spec)) {
-    return { kind: "pending", deploymentId: rec.id, reason: "réplicas ainda não estão prontas", phase: "HealthChecking" };
+    return { kind: "pending", deploymentId: rec.id, reason: "replicas are not ready yet", phase: "HealthChecking" };
   }
   if (!(await deps.store.promote(rec.id))) return null;
   return { kind: "converged", deploymentId: rec.id };
 }
 
-// Logs são diagnóstico: falha ao lê-los não pode mudar o resultado do build.
+// Logs are diagnostics: failing to read them must not change the build's result.
 async function captureBuildLogs(deps: ReconcilerDeps, d: DeploymentRecord): Promise<void> {
   if (!deps.builder) return;
   try {
     await deps.store.saveBuildLog(d.id, await deps.builder.logs({ deploymentId: d.id, serviceInstanceId: d.serviceInstanceId }));
   } catch {
-    // Mantém o último retrato salvo.
+    // Keeps the last saved snapshot.
   }
 }
 
-// Inicia (idempotente) e consulta o build de um deployment de repositório.
+// Starts (idempotently) and checks the build of a repository deployment.
 async function runBuild(deps: ReconcilerDeps, d: DeploymentRecord) {
-  if (!deps.builder) throw new PermanentError("builder não configurado para deployment de repositório", d.id);
-  if (!d.commitSha || !d.repoUrl) throw new PermanentError(`deployment ${d.id} sem commit ou repositório`, d.id);
+  if (!deps.builder) throw new PermanentError("builder not configured for repository deployment", d.id);
+  if (!d.commitSha || !d.repoUrl) throw new PermanentError(`deployment ${d.id} has no commit or repository`, d.id);
 
   const req: BuildRequest = {
     deploymentId: d.id,
@@ -104,11 +104,11 @@ async function runBuild(deps: ReconcilerDeps, d: DeploymentRecord) {
   return deps.builder.status(req);
 }
 
-// Decide o que fazer com um job de reconciliação.
-// - Erro permanente: o deployment vai para Failed na hora.
-// - Erro transitório: re-tenta até o último retry; nele, o deployment vai para Failed com o motivo.
-// - Pendência (build ou health check): re-tenta; no último retry, vai para Failed dizendo em que fase parou.
-// `budget` vem do BullMQ, para o orçamento ficar na fila e não em memória.
+// Decides what to do with a reconciliation job.
+// - Permanent error: the deployment goes to Failed right away.
+// - Transient error: retries up to the last attempt; on it, the deployment goes to Failed with the reason.
+// - Pending (build or health check): retries; on the last attempt, goes to Failed saying which phase it stopped in.
+// `budget` comes from BullMQ, so the budget lives in the queue rather than in memory.
 export async function handleReconcileJob(
   deps: ReconcilerDeps,
   data: { serviceInstanceId: string },
@@ -126,7 +126,7 @@ export async function handleReconcileJob(
     const deploymentId = permanent && err.deploymentId ? err.deploymentId : (await deps.store.findActive(data.serviceInstanceId))?.id;
     if (!deploymentId) throw err;
 
-    const reason = permanent ? err.message : `erro após ${budget.maxAttempts} tentativas: ${(err as Error).message}`;
+    const reason = permanent ? err.message : `error after ${budget.maxAttempts} attempts: ${(err as Error).message}`;
     await failDeployment(deps.store, deploymentId, reason);
     return { kind: "failed", deploymentId };
   }
@@ -134,23 +134,23 @@ export async function handleReconcileJob(
   if (result.kind !== "pending") return result;
 
   if (!lastAttempt) {
-    throw new Error(`${result.reason} (tentativa ${budget.attemptsMade + 1} de ${budget.maxAttempts})`);
+    throw new Error(`${result.reason} (attempt ${budget.attemptsMade + 1} of ${budget.maxAttempts})`);
   }
-  const what = result.phase === "Building" ? "build não concluiu" : "health check não passou";
-  await failDeployment(deps.store, result.deploymentId, `${what} após ${budget.maxAttempts} tentativas: ${result.reason}`);
+  const what = result.phase === "Building" ? "build did not finish" : "health check did not pass";
+  await failDeployment(deps.store, result.deploymentId, `${what} after ${budget.maxAttempts} attempts: ${result.reason}`);
   return { kind: "failed", deploymentId: result.deploymentId };
 }
 
-// Marca o deployment ativo como Failed, a partir do estado em que ele estiver agora.
+// Marks the active deployment as Failed, from whatever state it's currently in.
 async function failDeployment(store: DeploymentStore, id: string, reason: string): Promise<void> {
   for (const from of ["HealthChecking", "Deploying", "Building"] as const) {
     transition(from, "Failed");
     if (await store.setStatus(id, from, "Failed", reason)) return;
   }
-  throw new Error(`deployment ${id} mudou durante a falha; tentar de novo`);
+  throw new Error(`deployment ${id} changed during the failure; try again`);
 }
 
-// Valida a transição na máquina de estados antes de gravar. Lança se a transição não existe.
+// Validates the transition in the state machine before writing. Throws if the transition doesn't exist.
 async function advance(
   store: DeploymentStore,
   id: string,
@@ -172,7 +172,7 @@ function specFor(d: DeploymentRecord & { imageDigest: string }): WorkloadSpec {
   };
 }
 
-// Pronto = as réplicas da imagem deste deployment estão prontas. Um workload com a imagem antiga não conta.
+// Ready = this deployment's image has its replicas ready. A workload with the old image doesn't count.
 function isReady(status: WorkloadStatus | null, spec: WorkloadSpec): boolean {
   return status !== null && status.image === spec.image && status.readyReplicas >= spec.replicas;
 }

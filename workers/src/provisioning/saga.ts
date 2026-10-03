@@ -2,7 +2,7 @@ import type { ProvisionEnvironmentJobData } from "@railway-like/shared";
 import { environmentLabels, DEFAULT_ENV_QUOTA, type EnvironmentRuntime } from "../runtime/environment.js";
 import { namespaceFor } from "../runtime/adapter.js";
 
-// Ordem dos passos (architecture.md §6). Cada um é um upsert: repetir um passo já aplicado não muda nada.
+// Step order (architecture.md §6). Each one is an upsert: repeating an already-applied step changes nothing.
 export const PROVISIONING_STEPS = ["namespace", "default-deny-policy", "quota"] as const;
 export type ProvisioningStep = (typeof PROVISIONING_STEPS)[number];
 
@@ -17,10 +17,10 @@ export interface EnvironmentRecord {
 
 export interface EnvironmentProvisioningStore {
   findEnvironment(environmentId: string): Promise<EnvironmentRecord | null>;
-  // Marca o início (ou a retomada) da saga. Não apaga os passos já concluídos.
+  // Marks the start (or resumption) of the saga. Doesn't erase steps already completed.
   markProvisioning(environmentId: string): Promise<void>;
   markStepDone(environmentId: string, step: ProvisioningStep): Promise<void>;
-  // Registra o erro sem mudar o status: a saga ainda pode ser retentada.
+  // Records the error without changing the status: the saga can still be retried.
   recordError(environmentId: string, reason: string): Promise<void>;
   markReady(environmentId: string): Promise<void>;
   markFailed(environmentId: string, reason: string): Promise<void>;
@@ -36,7 +36,7 @@ export type ProvisionResult =
   | { kind: "missing"; environmentId: string }
   | { kind: "failed"; environmentId: string };
 
-// Executa os passos que faltam. Se um passo falhar, lança o erro: o chamador decide entre retentar ou marcar como failed.
+// Runs the steps that are missing. If a step fails, throws the error: the caller decides between retrying or marking as failed.
 export async function provisionEnvironment(
   deps: ProvisioningDeps,
   { environmentId }: ProvisionEnvironmentJobData,
@@ -70,8 +70,8 @@ async function runStep(runtime: EnvironmentRuntime, step: ProvisioningStep, name
   }
 }
 
-// Entrada do job na fila. Erro transitório: registra e relança, para o BullMQ retentar (os passos concluídos são preservados).
-// Na última tentativa, ou com erro permanente, o ambiente vira failed.
+// Job entry point in the queue. Transient error: records it and rethrows, for BullMQ to retry (completed steps are preserved).
+// On the last attempt, or with a permanent error, the environment becomes failed.
 export async function handleProvisionEnvironmentJob(
   deps: ProvisioningDeps,
   data: ProvisionEnvironmentJobData,
@@ -85,7 +85,7 @@ export async function handleProvisionEnvironmentJob(
       await deps.store.recordError(data.environmentId, message);
       throw err;
     }
-    await deps.store.markFailed(data.environmentId, `erro após ${budget.maxAttempts} tentativas: ${message}`);
+    await deps.store.markFailed(data.environmentId, `error after ${budget.maxAttempts} attempts: ${message}`);
     return { kind: "failed", environmentId: data.environmentId };
   }
 }

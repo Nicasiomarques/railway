@@ -1,8 +1,8 @@
 import type * as k8s from "@kubernetes/client-node";
 
-// Porta de provisionamento do namespace de um ambiente (architecture.md §6). Separada de RuntimeAdapter:
-// só a saga de provisionamento chama esta interface. Cada operação é upsert idempotente.
-// Implementações: InMemoryRuntime (testes) e K8sRuntime (k3s).
+// Port for provisioning an environment's namespace (architecture.md §6). Separate from RuntimeAdapter:
+// only the provisioning saga calls this interface. Each operation is an idempotent upsert.
+// Implementations: InMemoryRuntime (tests) and K8sRuntime (k3s).
 
 export interface EnvironmentQuota {
   requests: { cpu: string; memory: string };
@@ -16,14 +16,14 @@ export interface EnvironmentRuntime {
   applyQuota(namespace: string, quota: EnvironmentQuota): Promise<void>;
 }
 
-// Quota do ambiente inteiro. Valor inicial fixo; quando houver plano por projeto, vem de lá.
+// Quota for the whole environment. Fixed starting value; once per-project plans exist, it'll come from there.
 export const DEFAULT_ENV_QUOTA: EnvironmentQuota = {
   requests: { cpu: "2", memory: "4Gi" },
   limits: { cpu: "4", memory: "8Gi" },
   pods: 20,
 };
 
-// Padrão por contêiner. Sem ele, com ResourceQuota de CPU/memória, pods sem requests/limits são rejeitados.
+// Per-container default. Without it, with a CPU/memory ResourceQuota, pods with no requests/limits get rejected.
 export const DEFAULT_CONTAINER_RESOURCES = {
   requests: { cpu: "100m", memory: "128Mi" },
   limits: { cpu: "500m", memory: "512Mi" },
@@ -39,7 +39,7 @@ export function environmentLabels(projectId: string, environmentId: string): Rec
   };
 }
 
-// Nega todo ingress e egress do namespace. Liberações (edge, tráfego entre serviços, internet) entram depois, por política própria.
+// Denies all ingress and egress for the namespace. Allowances (edge, inter-service traffic, internet) come later, via their own policy.
 export function defaultDenyPolicy(namespace: string): k8s.V1NetworkPolicy {
   return {
     apiVersion: "networking.k8s.io/v1",
@@ -66,8 +66,8 @@ export function resourceQuotaObject(namespace: string, quota: EnvironmentQuota):
   };
 }
 
-// `default` vai no wire com esse nome. O tipo do cliente expõe `_default`, mas o patch SSA não converte esse nome:
-// o cluster rejeita `_default` com "field not declared in schema" (confirmado no k3d).
+// `default` goes on the wire under that name. The client type exposes `_default`, but the SSA patch doesn't
+// convert that name: the cluster rejects `_default` with "field not declared in schema" (confirmed on k3d).
 export function limitRangeObject(namespace: string) {
   return {
     apiVersion: "v1",

@@ -8,7 +8,7 @@ import {
   transition,
 } from "./deployment-state.js";
 
-describe("máquina de estados de deployment", () => {
+describe("deployment state machine", () => {
   it("caminho feliz percorre Queued → Running", () => {
     const path = ["Queued", "Building", "Deploying", "HealthChecking", "Running"] as const;
     for (let i = 0; i < path.length - 1; i++) {
@@ -16,7 +16,7 @@ describe("máquina de estados de deployment", () => {
     }
   });
 
-  it("Running é substituído por Superseded ou RolledBack", () => {
+  it("Running is replaced by Superseded or RolledBack", () => {
     expect(canTransition("Running", "Superseded")).toBe(true);
     expect(canTransition("Running", "RolledBack")).toBe(true);
     expect(canTransition("Running", "Failed")).toBe(false);
@@ -30,18 +30,18 @@ describe("máquina de estados de deployment", () => {
     }
   });
 
-  it("não pula etapas", () => {
+  it("doesn't skip steps", () => {
     expect(canTransition("Queued", "Deploying")).toBe(false);
     expect(canTransition("Building", "Running")).toBe(false);
     expect(canTransition("Deploying", "Running")).toBe(false);
   });
 
-  it("não volta etapas", () => {
+  it("doesn't go back a step", () => {
     expect(canTransition("Deploying", "Building")).toBe(false);
     expect(canTransition("HealthChecking", "Deploying")).toBe(false);
   });
 
-  it("estados terminais não têm saída", () => {
+  it("terminal states have no outgoing transition", () => {
     for (const from of TERMINAL_DEPLOYMENT_STATUSES) {
       for (const to of DEPLOYMENT_STATUSES) {
         expect(canTransition(from, to)).toBe(false);
@@ -49,7 +49,7 @@ describe("máquina de estados de deployment", () => {
     }
   });
 
-  it("terminais são Superseded, RolledBack, Failed e Cancelled", () => {
+  it("terminal states are Superseded, RolledBack, Failed and Cancelled", () => {
     expect([...TERMINAL_DEPLOYMENT_STATUSES].sort()).toEqual(
       ["Cancelled", "Failed", "RolledBack", "Superseded"],
     );
@@ -57,7 +57,7 @@ describe("máquina de estados de deployment", () => {
     expect(isTerminalDeploymentStatus("Failed")).toBe(true);
   });
 
-  it("transition devolve o novo estado ou lança erro tipado", () => {
+  it("transition returns the new state or throws a typed error", () => {
     expect(transition("Queued", "Building")).toBe("Building");
     expect(() => transition("Queued", "Running")).toThrow(InvalidDeploymentTransitionError);
     try {

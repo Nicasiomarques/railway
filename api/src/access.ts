@@ -5,14 +5,14 @@ import { memberships, projects, serviceInstances, services } from "./db/schema.j
 
 export type Role = "owner" | "admin" | "member" | "viewer";
 
-// Membership ausente vira 404 para não revelar a existência do recurso.
+// A missing membership becomes a 404 so we don't reveal that the resource exists.
 export async function requireMembership(db: Db, userId: string, organizationId: string): Promise<Role> {
   const [m] = await db
     .select({ role: memberships.role })
     .from(memberships)
     .where(and(eq(memberships.userId, userId), eq(memberships.organizationId, organizationId)))
     .limit(1);
-  if (!m) throw new ApiError(404, "organization_not_found", "Organização não encontrada.");
+  if (!m) throw new ApiError(404, "organization_not_found", "Organization not found.");
   return m.role;
 }
 
@@ -31,9 +31,9 @@ export async function requireProjectAccess(
     )
     .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
     .limit(1);
-  if (!row) throw new ApiError(404, "project_not_found", "Projeto não encontrado.");
+  if (!row) throw new ApiError(404, "project_not_found", "Project not found.");
   if (opts.write && row.role === "viewer") {
-    throw new ApiError(403, "forbidden", "Papel 'viewer' não pode alterar este recurso.");
+    throw new ApiError(403, "forbidden", "The 'viewer' role cannot modify this resource.");
   }
   return row;
 }
@@ -59,9 +59,9 @@ export async function requireInstanceAccess(
     )
     .where(and(eq(serviceInstances.id, instanceId), isNull(serviceInstances.deletedAt), isNull(services.deletedAt)))
     .limit(1);
-  if (!row) throw new ApiError(404, "instance_not_found", "Instância não encontrada.");
+  if (!row) throw new ApiError(404, "instance_not_found", "Instance not found.");
   if (opts.write && row.role === "viewer") {
-    throw new ApiError(403, "forbidden", "Papel 'viewer' não pode alterar este recurso.");
+    throw new ApiError(403, "forbidden", "The 'viewer' role cannot modify this resource.");
   }
   return row;
 }

@@ -15,10 +15,10 @@ export const environmentRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { d
       config: {
         openapi: {
           operationId: "listEnvironments",
-          tags: ["Ambientes"],
-          summary: "Lista os ambientes do projeto",
+          tags: ["Environments"],
+          summary: "Lists the project's environments",
           pathSchema: projectParams,
-          success: { status: 200, description: "Ambientes", schema: listOf(EnvironmentSchema) },
+          success: { status: 200, description: "Environments", schema: listOf(EnvironmentSchema) },
           errors: [404],
         },
       },

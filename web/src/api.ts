@@ -1,4 +1,4 @@
-// Token de dev guardado no localStorage. Não é adequado para produção (use cookie httpOnly).
+// Dev token stored in localStorage. Not suitable for production (use an httpOnly cookie).
 const TOKEN_KEY = "railway_like.token";
 
 export const tokenStore = {
@@ -78,4 +78,14 @@ export type Deployment = {
 
 export type DeploymentDetail = Deployment & {
   events: { fromStatus: DeploymentStatus | null; toStatus: DeploymentStatus; reason: string | null; occurredAt: string }[];
+};
+
+// List from GET /services/{instanceId}/variables: only the instance's own variables
+// (the API doesn't yet resolve environment/project inheritance on this route). `value` comes back null when isSecret.
+export type Variable = {
+  key: string;
+  isSecret: boolean;
+  version: number;
+  updatedAt: string;
+  value: string | null;
 };

@@ -2,7 +2,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { environments, type Db } from "@railway-like/db";
 import type { EnvironmentProvisioningStore, EnvironmentRecord, ProvisioningStep } from "./saga.js";
 
-// Estado da saga em environments (provisioning_status, provisioning_steps, provisioning_error).
+// Saga state in environments (provisioning_status, provisioning_steps, provisioning_error).
 export class PostgresEnvironmentStore implements EnvironmentProvisioningStore {
   constructor(private readonly db: Db) {}
 
@@ -24,7 +24,7 @@ export class PostgresEnvironmentStore implements EnvironmentProvisioningStore {
     await this.update(environmentId, { provisioningStatus: "provisioning" });
   }
 
-  // Concatena só se o passo ainda não estiver na lista: repetir a escrita não duplica o registro.
+  // Appends only if the step isn't already in the list: writing it again doesn't duplicate the record.
   async markStepDone(environmentId: string, step: ProvisioningStep): Promise<void> {
     await this.db
       .update(environments)
