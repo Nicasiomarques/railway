@@ -1,32 +1,41 @@
-# Spike: sandbox do build com gVisor
+# Spike: build sandbox with gVisor
 
-Objetivo: validar se o build pode rodar num kernel de usuário (gVisor) em vez do kernel do nó, e se isso dispensa as concessões do BuildKit rootless.
+Goal: validate whether the build can run on a user-space kernel (gVisor) instead of the node's
+kernel, and whether that removes the need for rootless BuildKit's concessions.
 
-Instalação: `./install.sh` (checksums conferidos, RuntimeClass `gvisor`). Verificação do sandbox: um pod com `runtimeClassName: gvisor` reporta kernel `4.4.0` (versão fixa do gVisor), contra o kernel real do host.
+Install: `./install.sh` (checksums verified, `gvisor` RuntimeClass). Sandbox check: a pod with
+`runtimeClassName: gvisor` reports kernel `4.4.0` (gVisor's fixed version), against the host's real
+kernel.
 
-## Resultados medidos
+## Measured results
 
-| Pergunta | Resultado |
+| Question | Result |
 |---|---|
-| Pod roda sob gVisor no k3d? | Sim. Kernel reportado 4.4.0 (gVisor) |
-| A política de egress vale sob gVisor? | Sim. API do cluster dá `rc=7`, host liberado `200`, internet `200` (idêntico ao runc) |
-| DNS do cluster sob gVisor? | Funciona para `kubernetes.default.svc`. `host.k3d.internal` **não resolve** (detalhe do k3d, não do gVisor) |
-| Build com `RUN npm install` sob gVisor, sandbox de processo ligado, snapshotter nativo | **Sim** (app Node sem Dockerfile, publicado e puxado pelo digest) |
-| Snapshotter overlay (padrão rootless) sob gVisor | **Não**: `mount callback failed … transport endpoint is not connected` (FUSE) |
-| BuildKit rootless sem seccomp `Unconfined` e sem escalada de privilégio | **Não**: `newuidmap` precisa de setuid, bloqueado sem escalada |
-| BuildKit root, seccomp `RuntimeDefault`, sem escalada, com `SYS_ADMIN` (+ `SYS_PTRACE`, `NET_ADMIN` etc.) | **Não no `RUN`**: clone, detect e pull passam; `runc` falha com `setns: operation not permitted` ao entrar no mount namespace do container. Não melhora com `--oci-worker-no-process-sandbox` |
+| Does a pod run under gVisor on k3d? | Yes. Reported kernel 4.4.0 (gVisor) |
+| Does the egress policy still hold under gVisor? | Yes. Cluster API gives `rc=7`, allowed host `200`, internet `200` (identical to runc) |
+| Does cluster DNS work under gVisor? | Works for `kubernetes.default.svc`. `host.k3d.internal` **doesn't resolve** (a k3d detail, not gVisor's) |
+| Build with `RUN npm install` under gVisor, process sandbox on, native snapshotter | **Yes** (Node app with no Dockerfile, published and pulled by digest) |
+| Overlay snapshotter (rootless default) under gVisor | **No**: `mount callback failed … transport endpoint is not connected` (FUSE) |
+| Rootless BuildKit without seccomp `Unconfined` and without privilege escalation | **No**: `newuidmap` needs setuid, blocked without escalation |
+| Root BuildKit, seccomp `RuntimeDefault`, no escalation, with `SYS_ADMIN` (+ `SYS_PTRACE`, `NET_ADMIN` etc.) | **No, at `RUN`**: clone, detect and pull succeed; `runc` fails with `setns: operation not permitted` entering the container's mount namespace. Doesn't improve with `--oci-worker-no-process-sandbox` |
 
-## O que isso significa
+## What this means
 
-- O gVisor adiciona a barreira de kernel: um escape do build cai no sandbox, não no kernel do nó.
-- As concessões de seccomp `Unconfined` e escalada de privilégio **continuam** para o BuildKit rootless. O gVisor não as elimina sozinho.
-- Padrão de produção atual: `runtimeClass: gvisor`, `--oci-worker-snapshotter=native`, sandbox de processo ligado.
+- gVisor adds the kernel barrier: a build escape lands in the sandbox, not on the node's kernel.
+- The seccomp `Unconfined` and privilege-escalation concessions **remain** for rootless BuildKit.
+  gVisor doesn't eliminate them on its own.
+- Current production default: `runtimeClass: gvisor`, `--oci-worker-snapshotter=native`, process
+  sandbox on.
 
-## Conclusão da investigação de root
+## Root-cause investigation conclusion
 
-Nenhuma combinação testada dispensa as concessões do BuildKit rootless sob gVisor. O gVisor não implementa o `setns` para mount namespace que o `runc` usa no modo root. A única saída que isola de verdade sem essas concessões é outro modelo de isolamento: microVM (Kata/Firecracker), que exige `/dev/kvm` no nó. O k3d no Docker Desktop não expõe KVM, então isso só é testável em um nó Linux dedicado.
+No combination tested removes the need for rootless BuildKit's concessions under gVisor. gVisor
+doesn't implement the `setns` for mount namespaces that `runc` uses in root mode. The only way to
+truly isolate without these concessions is a different isolation model: a microVM
+(Kata/Firecracker), which requires `/dev/kvm` on the node. k3d on Docker Desktop doesn't expose
+KVM, so this is only testable on a dedicated Linux node.
 
-## Pendente
+## Pending
 
-- Medir o custo do snapshotter nativo (cópia de camadas) em builds grandes.
-- Política de egress com DNS real (hoje o build precisa de IP para o host de teste).
+- Measure the native snapshotter's cost (layer copying) on large builds.
+- Egress policy with real DNS (today the build needs an IP for the test host).

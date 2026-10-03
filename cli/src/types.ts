@@ -1,4 +1,4 @@
-// Espelha só os campos que a CLI consome dos contratos em api/src/openapi/schemas.ts.
+// Mirrors only the fields the CLI consumes from the contracts in api/src/openapi/schemas.ts.
 
 export type Organization = {
   id: string;

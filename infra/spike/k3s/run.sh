@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Spike Fase 0: isolamento entre ambientes no k3s (architecture.md §7.2).
-# Cria dois ambientes (namespaces) com um app real em cada um e NetworkPolicy default-deny.
-# Verifica: tráfego dentro do ambiente passa; tráfego entre ambientes é bloqueado.
+# Phase 0 spike: isolation between environments on k3s (architecture.md §7.2).
+# Creates two environments (namespaces) with a real app in each, and a default-deny NetworkPolicy.
+# Checks: traffic within the environment passes; traffic between environments is blocked.
 #
-# Armadilha conhecida: o kube-router leva alguns segundos para programar o IP de um pod novo.
-# Por isso o cliente é um pod persistente, e os negativos só são avaliados depois que o
-# positivo do próprio ambiente passa (prova de que a política já está programada).
+# Known gotcha: kube-router takes a few seconds to program a new pod's IP. That's why the
+# client is a persistent pod, and negatives are only evaluated after the environment's own
+# positive passes (proof the policy is already programmed).
 set -euo pipefail
 
 CTX="${KUBE_CONTEXT:-k3d-railway-dev}"
@@ -15,11 +15,11 @@ APP_IMAGE="nginxinc/nginx-unprivileged:1.27-alpine"
 CLIENT_IMAGE="curlimages/curl:8.11.1"
 FAILURES=0
 
-http_code() { # <namespace> <url> -> código HTTP, ou 000 se não conectou
+http_code() { # <namespace> <url> -> HTTP code, or 000 if it didn't connect
   $K -n "$1" exec client -- curl -s -m 5 -o /dev/null -w '%{http_code}' "$2" 2>/dev/null || true
 }
 
-wait_allowed() { # <namespace> <url> -> espera até o tráfego do próprio ambiente passar
+wait_allowed() { # <namespace> <url> -> waits until the environment's own traffic passes
   local ns="$1" url="$2" code
   for _ in $(seq 1 30); do
     code=$(http_code "$ns" "$url")
@@ -29,25 +29,25 @@ wait_allowed() { # <namespace> <url> -> espera até o tráfego do próprio ambie
   return 1
 }
 
-check() { # check <descrição> <ALLOWED|BLOCKED> <namespace> <url>
+check() { # check <description> <ALLOWED|BLOCKED> <namespace> <url>
   local desc="$1" expected="$2" ns="$3" url="$4" code result
   code=$(http_code "$ns" "$url")
   if [[ "$code" == 2* ]]; then result=ALLOWED; else result=BLOCKED; fi
   if [[ "$result" == "$expected" ]]; then
     echo "PASS  $desc (HTTP $code)"
   else
-    echo "FAIL  $desc: esperado $expected, obtido $result (HTTP $code)"
+    echo "FAIL  $desc: expected $expected, got $result (HTTP $code)"
     FAILURES=$((FAILURES + 1))
   fi
 }
 
-echo "== namespaces com perfil restricted"
+echo "== namespaces with the restricted profile"
 for ns in "${ENVS[@]}"; do
   $K create namespace "$ns" --dry-run=client -o yaml | $K apply -f - >/dev/null
   $K label namespace "$ns" pod-security.kubernetes.io/enforce=restricted platform/env="$ns" --overwrite >/dev/null
 done
 
-echo "== app, cliente e NetworkPolicy em cada ambiente"
+echo "== app, client and NetworkPolicy in each environment"
 for ns in "${ENVS[@]}"; do
   $K apply -n "$ns" -f - >/dev/null <<YAML
 apiVersion: apps/v1
@@ -95,7 +95,7 @@ spec:
       command: [sleep, "86400"]
       securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
 ---
-# Default-deny: nada entra nem sai sem regra explícita.
+# Default-deny: nothing goes in or out without an explicit rule.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: default-deny}
@@ -103,7 +103,7 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
-# Tráfego entre pods do mesmo ambiente (seletor de namespace explícito).
+# Traffic between pods in the same environment (explicit namespace selector).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: allow-same-env}
@@ -117,7 +117,7 @@ spec:
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: $ns}}
 ---
-# DNS para o kube-dns.
+# DNS to kube-dns.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: allow-dns}
@@ -131,7 +131,7 @@ spec:
         - {port: 53, protocol: UDP}
         - {port: 53, protocol: TCP}
 ---
-# Internet liberada, exceto redes privadas do cluster e o endpoint de metadados de nuvem.
+# Internet allowed, except the cluster's private networks and the cloud metadata endpoint.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: allow-internet-egress}
@@ -150,33 +150,33 @@ spec:
 YAML
 done
 
-echo "== aguardando app e cliente"
+echo "== waiting for the app and client"
 for ns in "${ENVS[@]}"; do
   $K -n "$ns" rollout status deploy/hello --timeout=120s >/dev/null
   $K -n "$ns" wait --for=condition=Ready pod/client --timeout=120s >/dev/null
 done
 
-echo "== aguardando a política de cada ambiente ficar ativa"
+echo "== waiting for each environment's policy to become active"
 for ns in "${ENVS[@]}"; do
   if wait_allowed "$ns" "http://hello.$ns.svc.cluster.local:8080/"; then
-    echo "OK    $ns: app responde ao próprio cliente"
+    echo "OK    $ns: app responds to its own client"
   else
-    echo "FAIL  $ns: app não respondeu ao próprio cliente em 90s"
+    echo "FAIL  $ns: app did not respond to its own client within 90s"
     FAILURES=$((FAILURES + 1))
   fi
 done
 
-echo "== verificações de isolamento"
+echo "== isolation checks"
 for ns in "${ENVS[@]}"; do
-  check "$ns acessa o próprio app pelo Service" ALLOWED "$ns" "http://hello.$ns.svc.cluster.local:8080/"
+  check "$ns reaches its own app via the Service" ALLOWED "$ns" "http://hello.$ns.svc.cluster.local:8080/"
 done
-check "env-b NÃO acessa o app de env-a pelo Service" BLOCKED env-b "http://hello.env-a.svc.cluster.local:8080/"
-check "env-a NÃO acessa o app de env-b pelo Service" BLOCKED env-a "http://hello.env-b.svc.cluster.local:8080/"
+check "env-b does NOT reach env-a's app via the Service" BLOCKED env-b "http://hello.env-a.svc.cluster.local:8080/"
+check "env-a does NOT reach env-b's app via the Service" BLOCKED env-a "http://hello.env-b.svc.cluster.local:8080/"
 for ns in "${ENVS[@]}"; do
   other=$([[ "$ns" == env-a ]] && echo env-b || echo env-a)
   ip=$($K -n "$other" get pod -l app=hello -o jsonpath='{.items[0].status.podIP}')
-  check "$ns NÃO alcança o IP do pod de $other" BLOCKED "$ns" "http://$ip:8080/"
+  check "$ns does NOT reach $other's pod IP" BLOCKED "$ns" "http://$ip:8080/"
 done
 
 echo
-if [[ $FAILURES -eq 0 ]]; then echo "SPIKE OK: isolamento validado."; else echo "SPIKE FALHOU: $FAILURES verificação(ões)."; exit 1; fi
+if [[ $FAILURES -eq 0 ]]; then echo "SPIKE OK: isolation validated."; else echo "SPIKE FAILED: $FAILURES check(s)."; exit 1; fi

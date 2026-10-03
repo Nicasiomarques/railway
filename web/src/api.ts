@@ -80,8 +80,8 @@ export type DeploymentDetail = Deployment & {
   events: { fromStatus: DeploymentStatus | null; toStatus: DeploymentStatus; reason: string | null; occurredAt: string }[];
 };
 
-// Lista de GET /services/{instanceId}/variables: só variáveis da própria instância
-// (a API ainda não resolve herança de ambiente/projeto nesta rota). `value` vem null quando isSecret.
+// List from GET /services/{instanceId}/variables: only the instance's own variables
+// (the API doesn't yet resolve environment/project inheritance on this route). `value` comes back null when isSecret.
 export type Variable = {
   key: string;
   isSecret: boolean;
