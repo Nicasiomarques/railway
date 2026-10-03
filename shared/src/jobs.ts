@@ -60,8 +60,8 @@ export const PROVISION_ENVIRONMENT_JOB_RETRY = {
   removeOnFail: 100,
 } as const;
 
-// Domínio/TLS (architecture.md §6 e §8): hostname → DNS → certificado ACME → rota no edge.
-// Fila própria: o ciclo de vida de um domínio não tem relação com o de um deployment.
+// Domain/TLS (architecture.md §6 and §8): hostname → DNS → ACME certificate → edge route.
+// Own queue: a domain's lifecycle has no relation to a deployment's.
 export const DOMAINS_QUEUE = "domains";
 export const ISSUE_CERTIFICATE_JOB = "issue-certificate";
 
@@ -69,13 +69,13 @@ export interface IssueCertificateJobData {
   domainId: string;
 }
 
-// Um job por domínio: reenfileirar o mesmo domínio não duplica o trabalho.
+// One job per domain: re-enqueueing the same domain doesn't duplicate the work.
 export function issueCertificateJobId(data: IssueCertificateJobData): string {
   return `issue-certificate-${data.domainId}`;
 }
 
-// Pendência (DNS ainda propagando, ACME ainda validando) não é erro: re-tenta em intervalo fixo.
-// 60 tentativas × 5s = 5 min de orçamento antes de marcar o domínio como "failed".
+// Pending (DNS still propagating, ACME still validating) isn't an error: retry at a fixed interval.
+// 60 attempts × 5s = 5 min budget before marking the domain as "failed".
 export const ISSUE_CERTIFICATE_JOB_RETRY = {
   attempts: 60,
   backoff: { type: "fixed", delay: 5000 },

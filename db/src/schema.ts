@@ -290,12 +290,12 @@ export const githubRepoLinks = pgTable(
     branchRules: jsonb("branch_rules"),
     ...timestamps,
   },
-  // Um repo (dentro de uma instalação) liga a um único projeto; o webhook de push resolve por aqui.
+  // A repo (within an installation) links to a single project; the push webhook resolves through here.
   (t) => [uniqueIndex("github_repo_links_installation_repo_idx").on(t.installationId, t.repoId)],
 );
 
-// Idempotência dos webhooks do GitHub por X-GitHub-Delivery. Não encaixa em `idempotency_keys`
-// porque não há um usuário autenticado por trás da chamada (é o GitHub chamando a plataforma).
+// Idempotency for GitHub webhooks by X-GitHub-Delivery. Doesn't fit `idempotency_keys`
+// because there's no authenticated user behind the call (it's GitHub calling the platform).
 export const githubWebhookDeliveries = pgTable("github_webhook_deliveries", {
   deliveryId: text("delivery_id").primaryKey(),
   event: text("event").notNull(),
