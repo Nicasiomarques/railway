@@ -27,7 +27,8 @@ export const membershipRole = pgEnum("membership_role", ["owner", "admin", "memb
 export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom"]);
 export const serviceSource = pgEnum("service_source", ["github_repo", "image", "template"]);
 export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES);
-export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy"]);
+// "cron": created by the cron scheduler (workers/src/cron) when a cron service's schedule fires.
+export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy", "cron"]);
 export const domainType = pgEnum("domain_type", ["auto", "custom"]);
 export const variableScope = pgEnum("variable_scope", ["project", "environment", "service_instance"]);
 export const environmentProvisioningStatus = pgEnum("environment_provisioning_status", [
@@ -123,6 +124,8 @@ export const services = pgTable(
       .notNull()
       .references(() => projects.id),
     name: text("name").notNull(),
+    // Plain text, not a pgEnum: the allowed set ("web" | "worker" | "postgres" | "redis" | "cron")
+    // is validated at the API layer (api/src/routes/services.ts), not enforced by the column.
     kind: text("kind").notNull(),
     source: serviceSource("source").notNull(),
     // Only for source github_repo: clone URL. Commits arrive via the deployment.
@@ -149,6 +152,9 @@ export const serviceInstances = pgTable(
     replicas: integer("replicas").notNull().default(1),
     healthCheck: jsonb("health_check"),
     overrides: jsonb("overrides"),
+    // Cron expression (e.g. "0 3 * * *"). Only relevant when the owning service's kind is "cron";
+    // null otherwise. See workers/src/cron/scheduler.ts.
+    schedule: text("schedule"),
     ...timestamps,
     ...softDelete,
   },
