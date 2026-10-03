@@ -175,3 +175,13 @@ export const BuildLogSchema = z.object({
   content: z.string(),
   updatedAt: timestamp.nullable(),
 });
+
+// Snapshot básico do runtime de uma instância (architecture.md §9, §10). Sem série temporal no MVP:
+// `from`/`to`/`metric` ficam documentados na query para o contrato já prever a evolução futura.
+export const MetricsSnapshotSchema = z.object({
+  instanceId: uuid,
+  replicas: z.number().int(),
+  readyReplicas: z.number().int(),
+  image: z.string().nullable(),
+  status: z.enum(["running", "stopped"]),
+});

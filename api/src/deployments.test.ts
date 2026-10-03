@@ -6,6 +6,7 @@ import { testKeyring } from "./crypto/testing.js";
 import { db } from "./db/client.js";
 import { createUserWithToken } from "./db/fixtures.js";
 import { buildLogs, deploymentEvents, envSnapshots, memberships, deployments } from "./db/schema.js";
+import { workloadName, type RuntimeReader, type WorkloadRef, type WorkloadStatus } from "./runtime.js";
 
 const keyring = testKeyring();
 
@@ -22,14 +23,29 @@ class FakeQueue {
   }
 }
 
+// Runtime simulado para os testes de SSE e métricas: os testes populam `statuses`/`logs` por nome de workload.
+class FakeRuntime implements RuntimeReader {
+  statuses = new Map<string, WorkloadStatus | null>();
+  logs = new Map<string, string[]>();
+  async getStatus(ref: WorkloadRef): Promise<WorkloadStatus | null> {
+    return this.statuses.get(ref.name) ?? null;
+  }
+  async *tailLogs(ref: WorkloadRef): AsyncIterable<string> {
+    for (const line of this.logs.get(ref.name) ?? []) yield line;
+  }
+}
+
 // Uma única instância: a app guarda a referência, então o teste reinicia o estado em vez de trocar o objeto.
 const queue = new FakeQueue();
-const app = buildApp(db, { keyring, queue });
+const runtime = new FakeRuntime();
+const app = buildApp(db, { keyring, queue, runtime });
 
 beforeEach(async () => {
   queue.calls = [];
   queue.cancels = [];
   queue.fail = false;
+  runtime.statuses.clear();
+  runtime.logs.clear();
   const { rows } = await db.execute<{ tablename: string }>(
     sql`select tablename from pg_tables where schemaname = 'public' and tablename <> '__drizzle_migrations'`,
   );
@@ -368,5 +384,90 @@ describe("logs do build", () => {
 
     expect(foreign.statusCode).toBe(404);
     expect(foreign.json().code).toBe("deployment_not_found");
+  });
+});
+
+describe("tail de logs por SSE", () => {
+  it("stream=build abre o SSE e envia as linhas do retrato salvo, depois fecha", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    await db.insert(buildLogs).values({ deploymentId: id, content: "=== build ===\nok" });
+    // Build já terminado: a rota manda o que há e fecha, em vez de ficar esperando mais linhas.
+    await db.update(deployments).set({ status: "Running" }).where(sql`id = ${id}`);
+
+    const res = await app.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=build`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.body).toBe("data: === build ===\n\ndata: ok\n\n");
+  });
+
+  it("stream=runtime abre o SSE e envia as linhas do tailLogs do runtime", async () => {
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+    runtime.logs.set(workloadName(instanceId), ["linha a", "linha b"]);
+
+    const res = await app.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=runtime`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.body).toBe("data: linha a\n\ndata: linha b\n\n");
+  });
+
+  it("stream=runtime sem runtime configurado na API responde 503", async () => {
+    const bareApp = buildApp(db, { keyring, queue });
+    const { token, instanceId } = await setupInstance();
+    const id = (await deploy(token, instanceId, DIGEST)).json().id as string;
+
+    const res = await bareApp.inject({ method: "GET", url: `/v1/deployments/${id}/logs?stream=runtime`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().code).toBe("runtime_unavailable");
+    await bareApp.close();
+  });
+
+  it("deployment inexistente devolve 404 mesmo com stream", async () => {
+    const { token } = await setupInstance();
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/deployments/00000000-0000-0000-0000-000000000000/logs?stream=build`,
+      headers: auth(token),
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+});
+
+describe("métricas", () => {
+  it("devolve o snapshot do runtime (réplicas, imagem e estado)", async () => {
+    const { token, instanceId } = await setupInstance();
+    runtime.statuses.set(workloadName(instanceId), { image: DIGEST, replicas: 2, readyReplicas: 2 });
+
+    const res = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/metrics`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ instanceId, replicas: 2, readyReplicas: 2, image: DIGEST, status: "running" });
+  });
+
+  it("sem workload no runtime, devolve estado stopped com réplicas zero", async () => {
+    const { token, instanceId } = await setupInstance();
+
+    const res = await app.inject({ method: "GET", url: `/v1/services/${instanceId}/metrics`, headers: auth(token) });
+
+    expect(res.json()).toEqual({ instanceId, replicas: 0, readyReplicas: 0, image: null, status: "stopped" });
+  });
+
+  it("quem não tem acesso à instância recebe 404", async () => {
+    const owner = await setupInstance();
+    const outsider = await createUserWithToken(db);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/services/${owner.instanceId}/metrics`,
+      headers: auth(outsider.token),
+    });
+
+    expect(res.statusCode).toBe(404);
   });
 });

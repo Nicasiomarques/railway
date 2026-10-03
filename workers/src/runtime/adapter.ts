@@ -30,6 +30,9 @@ export interface RuntimeAdapter {
   // Upsert idempotente: aplicar o mesmo spec de novo não muda nada.
   applyWorkload(spec: WorkloadSpec): Promise<void>;
   getStatus(ref: WorkloadRef): Promise<WorkloadStatus | null>;
+  // Tail do stdout/stderr do workload. Sem pipeline Loki/Vector no MVP (architecture.md §9):
+  // é leitura direta do runtime, não armazenamento. `since` é um timestamp RFC3339; sem ele, mostra tudo disponível.
+  tailLogs(ref: WorkloadRef, opts?: { since?: string }): AsyncIterable<string>;
 }
 
 export function workloadName(serviceInstanceId: string): string {

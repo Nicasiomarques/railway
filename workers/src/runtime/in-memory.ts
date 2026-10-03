@@ -7,6 +7,7 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
   private readonly namespaces = new Map<string, Record<string, string>>();
   private readonly policies = new Set<string>();
   private readonly quotas = new Map<string, EnvironmentQuota>();
+  private readonly logs = new Map<string, string[]>();
 
   async ensureNamespace(namespace: string, labels: Record<string, string>): Promise<void> {
     this.namespaces.set(namespace, { ...this.namespaces.get(namespace), ...labels });
@@ -43,6 +44,22 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
       replicas: current.spec.replicas,
       readyReplicas: current.readyReplicas,
     };
+  }
+
+  // Popula o buffer de logs simulados de um workload; os testes chamam isto para controlar o conteúdo do tail.
+  seedLogs(name: string, lines: string[]): void {
+    this.logs.set(name, [...(this.logs.get(name) ?? []), ...lines]);
+  }
+
+  // Determinístico: devolve o que foi populado por `seedLogs`, ou uma linha simulada se o workload existir
+  // (sem pipeline Loki/Vector no MVP — architecture.md §9, tail direto do runtime).
+  async *tailLogs({ name }: WorkloadRef, _opts: { since?: string } = {}): AsyncIterable<string> {
+    const seeded = this.logs.get(name);
+    if (seeded) {
+      for (const line of seeded) yield line;
+      return;
+    }
+    if (this.workloads.has(name)) yield `[sim] ${name}: workload em execução`;
   }
 
   // Simula as réplicas do workload ficando prontas (sondagem de saúde passando).
