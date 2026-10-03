@@ -161,6 +161,7 @@ export const DeploymentSchema = z.object({
   trigger: z.enum(["push", "manual", "rollback", "redeploy"]),
   imageDigest: z.string().nullable(),
   commitSha: z.string().nullable(),
+  rollbackOfId: uuid.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -179,6 +180,17 @@ export const DeploymentDetailSchema = DeploymentSchema.extend({
 export const BuildLogSchema = z.object({
   content: z.string(),
   updatedAt: timestamp.nullable(),
+});
+
+// `id` is a bigint identity column in the database; it's carried as a string here since JSON/JS
+// numbers can't represent the full bigint range (and `JSON.stringify` can't serialize a BigInt at all).
+export const AuditLogSchema = z.object({
+  id: z.string(),
+  actorId: uuid.nullable(),
+  action: z.string(),
+  target: z.string().nullable(),
+  metadata: json.nullable(),
+  createdAt: timestamp,
 });
 
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:

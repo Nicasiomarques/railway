@@ -1,13 +1,35 @@
 import type { FastifyPluginAsync } from "fastify";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { OrganizationSchema, OrganizationSummarySchema, listOf } from "../openapi/schemas.js";
+import { AuditLogSchema, OrganizationSchema, OrganizationSummarySchema, listOf, paginated } from "../openapi/schemas.js";
+import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
+import { createdAtMs, decodeCursor, encodeCursor } from "../pagination.js";
 import { slugify } from "../slug.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, memberships, organizations } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
+
+const organizationParams = z.object({ organizationId: z.string().uuid() });
+
+const listAuditLogsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+});
+
+// `id` is a bigint identity column; drizzle returns it as a JS BigInt, which neither JSON.stringify
+// nor the cursor (a JSON-encoded string) can carry directly, so it's converted to a decimal string.
+function toAuditLogResponse(row: typeof auditLogs.$inferSelect) {
+  return {
+    id: row.id.toString(),
+    actorId: row.actorId,
+    action: row.action,
+    target: row.target,
+    metadata: row.metadata,
+    createdAt: row.occurredAt,
+  };
+}
 
 export const createOrganizationBody = z.object({
   name: z.string().trim().min(1).max(100),
@@ -97,4 +119,55 @@ export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
 
     return { data: rows };
   });
+
+  app.get(
+    "/organizations/:organizationId/audit-logs",
+    {
+      config: {
+        openapi: {
+          operationId: "listAuditLogs",
+          tags: ["Organizations"],
+          summary: "Lists an organization's audit log, from most recent to oldest",
+          pathSchema: organizationParams,
+          querySchema: listAuditLogsQuery,
+          success: { status: 200, description: "Audit log entries", schema: paginated(AuditLogSchema) },
+          errors: [404],
+        },
+      },
+    },
+    async (request) => {
+      const { organizationId } = organizationParams.parse(request.params);
+      const query = listAuditLogsQuery.parse(request.query);
+      // Any role can read the audit log; a missing organization and a non-member get the same 404
+      // (requireMembership doesn't distinguish them either, so existence isn't revealed).
+      await requireMembership(db, request.auth!.userId, organizationId);
+
+      const cursor = decodeCursor(query.cursor);
+      const ts = createdAtMs(auditLogs.occurredAt);
+
+      const rows = await db
+        .select()
+        .from(auditLogs)
+        .where(
+          and(
+            eq(auditLogs.organizationId, organizationId),
+            cursor
+              ? or(
+                  sql`${ts} < ${cursor.t}`,
+                  and(sql`${ts} = ${cursor.t}`, sql`${auditLogs.id} < ${cursor.id}::bigint`),
+                )
+              : undefined,
+          ),
+        )
+        .orderBy(desc(ts), desc(auditLogs.id))
+        .limit(query.limit + 1);
+
+      const hasMore = rows.length > query.limit;
+      const data = hasMore ? rows.slice(0, query.limit) : rows;
+      const last = data.at(-1);
+      const nextCursor = hasMore && last ? encodeCursor({ t: last.occurredAt.toISOString(), id: last.id.toString() }) : null;
+
+      return { data: data.map(toAuditLogResponse), nextCursor };
+    },
+  );
 };
