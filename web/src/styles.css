@@ -1,0 +1,114 @@
+:root {
+  --bg: #0b0d12;
+  --panel: #151922;
+  --border: #262c38;
+  --text: #e6e9ef;
+  --muted: #8a93a6;
+  --accent: #7c9cff;
+  --danger: #ff7a7a;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+h1, h2, h3 { margin: 0 0 12px; font-weight: 600; }
+h2 { font-size: 20px; }
+h3 { font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 28px; }
+code { background: var(--panel); padding: 2px 6px; border-radius: 4px; }
+
+button, input, select {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+button { background: var(--accent); color: #0b0d12; border-color: transparent; cursor: pointer; font-weight: 600; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.ghost { background: transparent; color: var(--muted); border-color: var(--border); font-weight: 400; }
+input, select { min-width: 0; }
+label { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; }
+
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: min(420px, 100%); display: flex; flex-direction: column; gap: 14px; }
+.card-row { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; list-style: none; }
+
+.shell { min-height: 100vh; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; border-bottom: 1px solid var(--border); }
+.header-right { display: flex; gap: 10px; align-items: center; }
+main { max-width: 880px; margin: 0 auto; padding: 32px 24px; }
+
+.section-head { display: flex; align-items: center; gap: 12px; }
+.inline { display: flex; gap: 8px; margin: 16px 0; }
+.inline.wrap { flex-wrap: wrap; }
+.inline input { flex: 1; min-width: 200px; }
+
+.list { list-style: none; padding: 0; margin: 12px 0; display: flex; flex-direction: column; gap: 8px; }
+.row { width: 100%; display: flex; justify-content: space-between; background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 500; text-align: left; }
+.row:hover { border-color: var(--accent); }
+
+.pill, .chip { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.pill { margin-left: 6px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+.muted { color: var(--muted); font-size: 14px; }
+.error { color: var(--danger); font-size: 14px; }
+.back { margin-bottom: 12px; }
+
+.tab { background: transparent; color: var(--muted); border: 1px solid var(--border); font-weight: 400; padding: 4px 12px; border-radius: 999px; font-size: 13px; }
+.tab.active { color: var(--text); border-color: var(--accent); }
+
+.canvas-wrap { margin-top: 8px; }
+.canvas-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 13px; }
+.canvas {
+  position: relative;
+  width: 100%;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--panel);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 20px 20px;
+  overflow: hidden;
+  touch-action: none;
+}
+.canvas-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; }
+.node {
+  position: absolute;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.node:hover { border-color: var(--accent); }
+.node:active { cursor: grabbing; }
+
+.canvas .links { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.link-line { fill: none; stroke: var(--muted); stroke-width: 2; }
+.link-line.draft { stroke: var(--accent); stroke-dasharray: 6 4; }
+.link-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: none; }
+.link.clickable .link-hit { pointer-events: stroke; cursor: pointer; }
+.link.clickable:hover .link-line { stroke: var(--danger); }
+
+.port {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: crosshair;
+}
