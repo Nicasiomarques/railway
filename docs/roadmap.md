@@ -17,6 +17,8 @@ Ver `architecture.md` para o desenho técnico.
 
 ## Fase 0 — Spike técnico (2–3 semanas)
 
+**Fora de escopo nesta fase:** autenticação. O spike roda sem login, provedor externo e RBAC; o acesso é local e restrito ao ambiente de teste. Auth volta na Fase 1.
+
 - Pipeline ponta a ponta manual: repo Node → build em sandbox → imagem → workload → URL com HTTPS.
 - Subir um cluster k3s e validar com um app real: deploy, NetworkPolicy entre namespaces e isolamento de build.
 - Validar o detector com 30–50 repos públicos por linguagem.
