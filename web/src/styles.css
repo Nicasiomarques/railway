@@ -135,3 +135,42 @@ main { max-width: 880px; margin: 0 auto; padding: 32px 24px; }
 .variables .card-row { align-items: center; }
 .var-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 label.checkbox { flex-direction: row; align-items: center; gap: 6px; }
+
+/* New service wizard */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 100;
+}
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.modal-head h2 { margin: 0; }
+.wizard-step-indicator { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+.wizard-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+.wizard-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 20px; }
+.row.selected { border-color: var(--accent); background: var(--bg); }
+.wizard-summary {
+  margin-top: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.wizard-summary h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.wizard-summary ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.wizard-summary .muted { display: inline-block; min-width: 110px; }
