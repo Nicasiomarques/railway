@@ -4,6 +4,7 @@ import { api, tokenStore, type Organization } from "../api";
 import { NewServiceWizard } from "./NewServiceWizard";
 import { ProjectDetail } from "./ProjectDetail";
 import { ProjectList } from "./ProjectList";
+import { UsagePanel } from "./UsagePanel";
 
 export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const orgs = useQuery({
@@ -53,7 +54,12 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         {orgs.isLoading && <p className="muted">Loading...</p>}
         {orgs.data && orgs.data.length === 0 && <p className="muted">No organizations for this token.</p>}
 
-        {selectedOrg && !project && <ProjectList org={selectedOrg} onOpen={setProject} />}
+        {selectedOrg && !project && (
+          <>
+            <ProjectList org={selectedOrg} onOpen={setProject} />
+            <UsagePanel org={selectedOrg} />
+          </>
+        )}
         {selectedOrg && project && (
           <ProjectDetail
             projectId={project.id}

@@ -121,3 +121,15 @@ export type AuditLogEntry = {
   metadata: Record<string, unknown> | null;
   createdAt: string;
 };
+
+// Row from GET /organizations/{organizationId}/usage?from=&to=. The identity fields
+// (project/service) are expected to be stable; the metric fields (e.g. totalReplicaMinutes,
+// sampleCount) are NOT finalized yet, so they're left untyped here and rendered generically
+// by UsagePanel rather than assumed by name.
+export type UsageRow = {
+  projectId: string;
+  projectName: string;
+  serviceInstanceId: string;
+  serviceName: string;
+  [metric: string]: unknown;
+};
