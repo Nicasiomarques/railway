@@ -2,14 +2,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiProblem, type Variable } from "../api";
 
-// Mesma regra de chave aplicada pela API (api/src/routes/variables.ts).
+// Same key rule enforced by the API (api/src/routes/variables.ts).
 const KEY_PATTERN = /^[A-Z_][A-Z0-9_]{0,127}$/;
 
 export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; canWrite: boolean }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ key: "", value: "", isSecret: false });
   const [error, setError] = useState<string | null>(null);
-  // Chaves cujo "mostrar" foi pedido explicitamente; nunca populado por padrão.
+  // Keys whose "reveal" was explicitly requested; never populated by default.
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   const list = useQuery({
@@ -22,7 +22,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     setError(null);
     try {
       const key = form.key.trim();
-      // PUT faz upsert pela chave: o mesmo formulário serve para criar e para atualizar.
+      // PUT upserts by key: the same form handles both create and update.
       await api(`/services/${instanceId}/variables/${key}`, {
         method: "PUT",
         json: { value: form.value, isSecret: form.isSecret },
@@ -30,12 +30,12 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
       setForm({ key: "", value: "", isSecret: false });
       queryClient.invalidateQueries({ queryKey: ["variables", instanceId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao gravar variável.");
+      setError(err instanceof ApiProblem ? err.message : "Error saving variable.");
     }
   }
 
   async function remove(key: string) {
-    if (!window.confirm(`Remover a variável ${key}?`)) return;
+    if (!window.confirm(`Remove variable ${key}?`)) return;
     setError(null);
     try {
       await api(`/services/${instanceId}/variables/${key}`, { method: "DELETE" });
@@ -46,7 +46,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
       });
       queryClient.invalidateQueries({ queryKey: ["variables", instanceId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao remover variável.");
+      setError(err instanceof ApiProblem ? err.message : "Error removing variable.");
     }
   }
 
@@ -59,7 +59,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     });
   }
 
-  // Preenche o formulário com a variável selecionada; secrets vêm sem valor (a API não o devolve).
+  // Fills the form with the selected variable; secrets come without a value (the API never returns it).
   function edit(v: Variable) {
     setForm({ key: v.key, value: v.value ?? "", isSecret: v.isSecret });
   }
@@ -69,7 +69,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
   return (
     <section className="variables">
       <div className="section-head">
-        <h3>Variáveis</h3>
+        <h3>Variables</h3>
       </div>
 
       {canWrite && (
@@ -77,14 +77,14 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
           <input
             value={form.key}
             onChange={(e) => setForm({ ...form, key: e.target.value.toUpperCase() })}
-            placeholder="NOME_DA_VARIAVEL"
-            aria-label="chave"
+            placeholder="VARIABLE_NAME"
+            aria-label="key"
           />
           <input
             value={form.value}
             onChange={(e) => setForm({ ...form, value: e.target.value })}
-            placeholder="valor"
-            aria-label="valor"
+            placeholder="value"
+            aria-label="value"
           />
           <label className="checkbox">
             <input
@@ -92,10 +92,10 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
               checked={form.isSecret}
               onChange={(e) => setForm({ ...form, isSecret: e.target.checked })}
             />
-            secreta
+            secret
           </label>
           <button type="submit" disabled={!keyValid}>
-            Gravar
+            Save
           </button>
         </form>
       )}
@@ -106,38 +106,38 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
           <li key={v.key} className="card-row">
             <div>
               <strong>{v.key}</strong>{" "}
-              {/* Esta rota só lista variáveis da própria instância; a API ainda não
-                  resolve/expõe herança de ambiente ou projeto para esta origem. */}
-              <span className="pill">própria instância</span>
-              {v.isSecret && <span className="chip">secreta</span>}
+              {/* This route only lists the instance's own variables; the API doesn't yet
+                  resolve/expose environment or project inheritance for this origin. */}
+              <span className="pill">own instance</span>
+              {v.isSecret && <span className="chip">secret</span>}
             </div>
             <div className="var-actions">
               <code>
                 {v.isSecret
                   ? revealed.has(v.key)
-                    ? "a API nunca devolve o valor de um secret — grave um novo valor para substituir"
+                    ? "the API never returns a secret's value — save a new value to replace it"
                     : "••••••"
                   : v.value}
               </code>
               {v.isSecret && (
                 <button className="ghost small" onClick={() => toggleReveal(v.key)}>
-                  {revealed.has(v.key) ? "Ocultar" : "Mostrar"}
+                  {revealed.has(v.key) ? "Hide" : "Reveal"}
                 </button>
               )}
               {canWrite && (
                 <>
                   <button className="ghost small" onClick={() => edit(v)}>
-                    Editar
+                    Edit
                   </button>
                   <button className="ghost small" onClick={() => remove(v.key)}>
-                    Remover
+                    Remove
                   </button>
                 </>
               )}
             </div>
           </li>
         ))}
-        {list.data?.length === 0 && <li className="muted">Nenhuma variável ainda.</li>}
+        {list.data?.length === 0 && <li className="muted">No variables yet.</li>}
       </ul>
     </section>
   );
