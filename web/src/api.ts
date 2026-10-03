@@ -89,3 +89,15 @@ export type Variable = {
   updatedAt: string;
   value: string | null;
 };
+
+// Row from GET /organizations/{organizationId}/usage?from=&to=. The identity fields
+// (project/service) are expected to be stable; the metric fields (e.g. totalReplicaMinutes,
+// sampleCount) are NOT finalized yet, so they're left untyped here and rendered generically
+// by UsagePanel rather than assumed by name.
+export type UsageRow = {
+  projectId: string;
+  projectName: string;
+  serviceInstanceId: string;
+  serviceName: string;
+  [metric: string]: unknown;
+};

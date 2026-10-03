@@ -130,6 +130,12 @@ main { max-width: 880px; margin: 0 auto; padding: 32px 24px; }
 .build-logs { margin-top: 12px; }
 .build-logs pre { background: #0b0d12; color: #d8dee9; border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
 
+/* Usage */
+.usage { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
+.usage-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+.usage-table th, .usage-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.usage-table th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+
 /* Variables */
 .variables { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
 .variables .card-row { align-items: center; }
