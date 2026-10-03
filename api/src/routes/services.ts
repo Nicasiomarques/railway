@@ -19,7 +19,7 @@ export const createServiceBody = z
       .max(63)
       .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use lowercase letters, numbers and hyphens"),
     kind: z.enum(["web", "worker", "postgres", "redis"]),
-    source: z.enum(["github_repo", "image", "template"]),
+    source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
     rootDir: z
       .string()
       .startsWith("/")

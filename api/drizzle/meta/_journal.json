@@ -50,6 +50,13 @@
       "when": 1791065450438,
       "tag": "0006_ambitious_the_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791070328290,
+      "tag": "0007_open_gunslinger",
+      "breakpoints": true
     }
   ]
 }

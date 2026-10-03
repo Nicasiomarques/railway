@@ -63,6 +63,9 @@ describe("OpenAPI contract", () => {
         "post /v1/services/{instanceId}/domains",
         "get /v1/services/{instanceId}/domains",
         "delete /v1/services/{instanceId}/domains/{domainId}",
+        "post /v1/services/{instanceId}/volumes",
+        "get /v1/services/{instanceId}/volumes",
+        "post /v1/volumes/{volumeId}/backup",
       ].sort(),
     );
   });

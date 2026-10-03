@@ -13,12 +13,13 @@ import { serviceRoutes } from "./routes/services.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
 import { domainRoutes } from "./routes/domains.js";
+import { volumeRoutes } from "./routes/volumes.js";
 import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { githubRoutes } from "./routes/github.js";
-import type { DeploymentQueue, DomainQueue } from "./queue.js";
+import type { BackupQueue, DeploymentQueue, DomainQueue } from "./queue.js";
 import type { GitHubChecksClient, GitHubInstallationTokenClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
 
@@ -29,6 +30,7 @@ export function buildApp(
     logger?: boolean;
     queue?: DeploymentQueue;
     domainQueue?: DomainQueue;
+    backupQueue?: BackupQueue;
     baseDomain?: string;
     githubWebhookSecret?: string;
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
@@ -55,6 +57,7 @@ export function buildApp(
       await v1.register(connectionRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
+      await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });
       await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue, runtime: opts.runtime });
     },
     { prefix: "/v1" },

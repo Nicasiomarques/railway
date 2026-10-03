@@ -68,7 +68,7 @@ export const ServiceSchema = z.object({
   projectId: uuid,
   name: z.string(),
   kind: z.enum(["web", "worker", "postgres", "redis"]),
-  source: z.enum(["github_repo", "image", "template"]),
+  source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
   rootDir: z.string(),
   repoUrl: z.string().nullable(),
   detectionSnapshot: json.nullable(),
@@ -144,6 +144,17 @@ export const DomainSchema = z.object({
   hostname: z.string(),
   type: z.enum(["auto", "custom"]),
   tlsState: z.string(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const VolumeSchema = z.object({
+  id: uuid,
+  serviceInstanceId: uuid,
+  mountPath: z.string(),
+  sizeGb: z.number().int(),
+  backupState: z.enum(["none", "pending", "completed", "failed"]),
+  lastBackupAt: timestamp.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
