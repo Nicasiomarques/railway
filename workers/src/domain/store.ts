@@ -1,5 +1,5 @@
-// O que o worker de domínio precisa do Postgres. Espelha o DeploymentStore do reconciliador
-// (reconciler/store.ts): o mínimo de leitura/escrita para o worker avançar o estado com segurança.
+// What the domain worker needs from Postgres. Mirrors the reconciler's DeploymentStore
+// (reconciler/store.ts): the minimal read/write needed for the worker to safely advance state.
 export interface DomainRecord {
   id: string;
   hostname: string;
@@ -9,6 +9,6 @@ export interface DomainRecord {
 export interface DomainStore {
   get(id: string): Promise<DomainRecord | null>;
 
-  // Compare-and-set: grava `to` só se o estado atual ainda for `from`. Retorna false em caso de corrida.
+  // Compare-and-set: writes `to` only if the current state is still `from`. Returns false on a race.
   setTlsState(id: string, from: string, to: string): Promise<boolean>;
 }

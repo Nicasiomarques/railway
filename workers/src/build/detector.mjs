@@ -1,6 +1,6 @@
-// Detector de stack: função pura sobre a árvore de arquivos do repo (architecture.md §3).
-// Escrito em JS puro e sem imports de pacote, porque o próprio arquivo é embutido no pod de build
-// e executado com `node`, sem etapa de compilação. Também funciona como CLI (ver `main` no fim).
+// Stack detector: pure function over the repo's file tree (architecture.md §3).
+// Written in plain JS with no package imports, because this file itself is embedded in the build pod
+// and run with `node`, with no compile step. Also works as a CLI (see `main` at the end).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,31 +15,31 @@ const GO_DEFAULT_VERSION = "1.23";
 /** @param {Tree} tree @returns {Detection} */
 export function detect(tree) {
   if (tree.exists("Dockerfile")) {
-    return { kind: "dockerfile", dockerfile: tree.read("Dockerfile"), justification: ["Dockerfile encontrado no repo: usado como está"] };
+    return { kind: "dockerfile", dockerfile: tree.read("Dockerfile"), justification: ["Dockerfile found in the repo: used as-is"] };
   }
   if (tree.exists("package.json")) return detectNode(tree);
   if (tree.exists("requirements.txt") || tree.exists("pyproject.toml")) return detectPython(tree);
   if (tree.exists("go.mod")) return detectGo(tree);
-  return unknown(["nenhum arquivo de stack reconhecido (package.json, requirements.txt, pyproject.toml, go.mod)"]);
+  return unknown(["no recognized stack file (package.json, requirements.txt, pyproject.toml, go.mod)"]);
 }
 
 function unknown(justification) {
-  return { kind: "unknown", dockerfile: null, justification: [...justification, "adicione um Dockerfile ao repo para controlar o build"] };
+  return { kind: "unknown", dockerfile: null, justification: [...justification, "add a Dockerfile to the repo to control the build"] };
 }
 
 /** @param {Tree} tree */
 function detectNode(tree) {
-  const justification = ["package.json encontrado"];
+  const justification = ["package.json found"];
   let pkg;
   try {
     pkg = JSON.parse(tree.read("package.json") ?? "");
   } catch {
-    return unknown([...justification, "package.json não é JSON válido"]);
+    return unknown([...justification, "package.json is not valid JSON"]);
   }
 
   const range = pkg.engines?.node;
   const major = nodeMajor(range) ?? NODE_DEFAULT_MAJOR;
-  justification.push(range ? `engines.node=${range} → node:${major}` : `sem engines.node → node:${major} (padrão)`);
+  justification.push(range ? `engines.node=${range} → node:${major}` : `no engines.node → node:${major} (default)`);
 
   let install;
   let runner;
@@ -54,7 +54,7 @@ function detectNode(tree) {
   } else {
     install = "npm install";
     runner = "npm";
-    justification.push("sem lockfile → npm install (build não reprodutível)");
+    justification.push("no lockfile → npm install (non-reproducible build)");
   }
 
   let start;
@@ -63,7 +63,7 @@ function detectNode(tree) {
     justification.push(`scripts.start → ${runner} start`);
   } else {
     const main = pkg.main && tree.exists(pkg.main) ? pkg.main : ["index.js", "server.js"].find((f) => tree.exists(f));
-    if (!main) return unknown([...justification, "sem scripts.start e sem entrypoint reconhecível (index.js, server.js ou main)"]);
+    if (!main) return unknown([...justification, "no scripts.start and no recognizable entrypoint (index.js, server.js or main)"]);
     start = ["node", main];
     justification.push(`entrypoint → node ${main}`);
   }
@@ -81,7 +81,7 @@ function detectNode(tree) {
   return { kind: "node", dockerfile, justification };
 }
 
-/** Maior versão de Node aceita pelo range (">=20" → "20", "^18.12" → "18", "20.x" → "20"). */
+/** Highest Node version accepted by the range (">=20" → "20", "^18.12" → "18", "20.x" → "20"). */
 function nodeMajor(range) {
   const m = typeof range === "string" ? /(\d+)/.exec(range) : null;
   return m ? m[1] : null;
@@ -89,14 +89,14 @@ function nodeMajor(range) {
 
 /** @param {Tree} tree */
 function detectPython(tree) {
-  const justification = [tree.exists("requirements.txt") ? "requirements.txt encontrado" : "pyproject.toml encontrado"];
+  const justification = [tree.exists("requirements.txt") ? "requirements.txt found" : "pyproject.toml found"];
   const install = tree.exists("requirements.txt")
     ? "pip install --no-cache-dir -r requirements.txt"
     : "pip install --no-cache-dir .";
-  justification.push(`instalação → ${install}`);
+  justification.push(`install → ${install}`);
 
   const entry = ["main.py", "app.py", "server.py"].find((f) => tree.exists(f));
-  if (!entry) return unknown([...justification, "nenhum entrypoint reconhecido (main.py, app.py, server.py)"]);
+  if (!entry) return unknown([...justification, "no recognized entrypoint (main.py, app.py, server.py)"]);
   justification.push(`entrypoint → python ${entry}`);
 
   const dockerfile = [
@@ -116,8 +116,8 @@ function detectPython(tree) {
 function detectGo(tree) {
   const goMod = tree.read("go.mod") ?? "";
   const version = /^go\s+(\d+\.\d+)/m.exec(goMod)?.[1] ?? GO_DEFAULT_VERSION;
-  const justification = [`go.mod encontrado → go ${version}`];
-  if (!tree.exists("main.go")) return unknown([...justification, "main.go não encontrado: só pacotes de biblioteca não viram imagem"]);
+  const justification = [`go.mod found → go ${version}`];
+  if (!tree.exists("main.go")) return unknown([...justification, "main.go not found: library-only packages don't become an image"]);
 
   const dockerfile = [
     `FROM golang:${version}-alpine AS build`,
@@ -133,8 +133,8 @@ function detectGo(tree) {
   return { kind: "go", dockerfile, justification };
 }
 
-// CLI: `node detector.mjs <srcDir> <rootDir> <outDir>`. Grava outDir/Dockerfile e outDir/detection.txt.
-// Sai com código 2 quando a stack não é reconhecida, para o build falhar com a justificativa nos logs.
+// CLI: `node detector.mjs <srcDir> <rootDir> <outDir>`. Writes outDir/Dockerfile and outDir/detection.txt.
+// Exits with code 2 when the stack isn't recognized, so the build fails with the justification in the logs.
 function main(argv) {
   const [srcDir, rootDir = "", outDir] = argv;
   const base = join(srcDir, rootDir);

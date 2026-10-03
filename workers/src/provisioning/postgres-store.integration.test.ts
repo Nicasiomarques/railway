@@ -7,7 +7,7 @@ import { resetDb } from "../test/fixtures.js";
 import { PostgresEnvironmentStore } from "./postgres-store.js";
 import { provisionEnvironment } from "./saga.js";
 
-// Roda só com WORKERS_TEST_DATABASE_URL. Trunca tabelas: não rode junto com a suíte da API.
+// Runs only with WORKERS_TEST_DATABASE_URL. Truncates tables: don't run alongside the API suite.
 const DATABASE_URL = process.env.WORKERS_TEST_DATABASE_URL;
 
 describe.skipIf(!DATABASE_URL)("PostgresEnvironmentStore", () => {
@@ -32,7 +32,7 @@ describe.skipIf(!DATABASE_URL)("PostgresEnvironmentStore", () => {
     return { envId: env.id, projectId: project.id };
   }
 
-  it("ambiente novo começa pending, sem passos", async () => {
+  it("a new environment starts pending, with no steps", async () => {
     const { envId, projectId } = await seedEnvironment();
 
     expect(await store.findEnvironment(envId)).toEqual({
@@ -43,11 +43,11 @@ describe.skipIf(!DATABASE_URL)("PostgresEnvironmentStore", () => {
     });
   });
 
-  it("ambiente inexistente devolve null", async () => {
+  it("a nonexistent environment returns null", async () => {
     expect(await store.findEnvironment("00000000-0000-0000-0000-000000000000")).toBeNull();
   });
 
-  it("saga completa grava ready e os três passos em ordem", async () => {
+  it("a completed saga records ready and the three steps in order", async () => {
     const { envId } = await seedEnvironment();
 
     const result = await provisionEnvironment({ store, runtime: new InMemoryRuntime() }, { environmentId: envId });
@@ -61,7 +61,7 @@ describe.skipIf(!DATABASE_URL)("PostgresEnvironmentStore", () => {
     });
   });
 
-  it("markStepDone não duplica um passo já registrado", async () => {
+  it("markStepDone doesn't duplicate a step that's already recorded", async () => {
     const { envId } = await seedEnvironment();
 
     await store.markStepDone(envId, "namespace");
@@ -70,12 +70,12 @@ describe.skipIf(!DATABASE_URL)("PostgresEnvironmentStore", () => {
     expect((await store.findEnvironment(envId))?.completedSteps).toEqual(["namespace"]);
   });
 
-  it("markFailed grava o motivo e o status failed", async () => {
+  it("markFailed records the reason and the failed status", async () => {
     const { envId } = await seedEnvironment();
 
-    await store.markFailed(envId, "erro após 10 tentativas: sem cluster");
+    await store.markFailed(envId, "error after 10 attempts: no cluster");
 
     const [row] = await db.select().from(environments).where(eq(environments.id, envId));
-    expect(row).toMatchObject({ provisioningStatus: "failed", provisioningError: "erro após 10 tentativas: sem cluster" });
+    expect(row).toMatchObject({ provisioningStatus: "failed", provisioningError: "error after 10 attempts: no cluster" });
   });
 });

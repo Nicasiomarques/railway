@@ -1,6 +1,6 @@
 import type { DomainRecord, DomainStore } from "./store.js";
 
-// Store em memória para testes. Espelha o contrato do Postgres, incluindo o compare-and-set de setTlsState.
+// In-memory store for tests. Mirrors the Postgres contract, including setTlsState's compare-and-set.
 export class InMemoryDomainStore implements DomainStore {
   private readonly rows = new Map<string, DomainRecord>();
 

@@ -5,7 +5,7 @@ const REF = { name: "wl-1", namespace: "env-ns" };
 const spec = { name: "wl-1", namespace: "env-ns", image: "app@sha256:aaa", env: { A: "1", B: "2" }, replicas: 1 };
 
 describe("InMemoryRuntime", () => {
-  it("aplicar o mesmo spec de novo mantém as réplicas prontas", async () => {
+  it("applying the same spec again keeps the replicas ready", async () => {
     const runtime = new InMemoryRuntime();
     await runtime.applyWorkload(spec);
     runtime.markReady("wl-1");
@@ -15,7 +15,7 @@ describe("InMemoryRuntime", () => {
     expect(await runtime.getStatus(REF)).toMatchObject({ readyReplicas: 1 });
   });
 
-  it("mudar a imagem inicia um rollout sem réplicas prontas", async () => {
+  it("changing the image starts a rollout with no ready replicas", async () => {
     const runtime = new InMemoryRuntime();
     await runtime.applyWorkload(spec);
     runtime.markReady("wl-1");
@@ -25,7 +25,7 @@ describe("InMemoryRuntime", () => {
     expect(await runtime.getStatus(REF)).toEqual({ image: "app@sha256:bbb", replicas: 1, readyReplicas: 0 });
   });
 
-  it("workload inexistente devolve null", async () => {
+  it("nonexistent workload returns null", async () => {
     expect(await new InMemoryRuntime().getStatus({ name: "nope", namespace: "env-ns" })).toBeNull();
   });
 });
@@ -37,22 +37,22 @@ describe("tailLogs", () => {
     return lines;
   }
 
-  it("devolve as linhas populadas por seedLogs, na ordem", async () => {
+  it("returns the lines populated by seedLogs, in order", async () => {
     const runtime = new InMemoryRuntime();
     await runtime.applyWorkload(spec);
-    runtime.seedLogs("wl-1", ["linha 1", "linha 2"]);
+    runtime.seedLogs("wl-1", ["line 1", "line 2"]);
 
-    expect(await collect(runtime.tailLogs(REF))).toEqual(["linha 1", "linha 2"]);
+    expect(await collect(runtime.tailLogs(REF))).toEqual(["line 1", "line 2"]);
   });
 
-  it("sem buffer populado, gera uma linha determinística se o workload existir", async () => {
+  it("with no buffer populated, yields a deterministic line if the workload exists", async () => {
     const runtime = new InMemoryRuntime();
     await runtime.applyWorkload(spec);
 
-    expect(await collect(runtime.tailLogs(REF))).toEqual(["[sim] wl-1: workload em execução"]);
+    expect(await collect(runtime.tailLogs(REF))).toEqual(["[sim] wl-1: workload running"]);
   });
 
-  it("workload inexistente não gera nenhuma linha", async () => {
+  it("a nonexistent workload yields no lines", async () => {
     const runtime = new InMemoryRuntime();
 
     expect(await collect(runtime.tailLogs({ name: "nope", namespace: "env-ns" }))).toEqual([]);

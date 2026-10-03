@@ -6,8 +6,8 @@ interface HostState {
   checks: number;
 }
 
-// Simula o fluxo real (DNS → ACME → edge) sem nenhuma chamada externa: depois de `checksToIssue`
-// verificações o certificado "emite", como se fosse a propagação de DNS e a validação ACME passando.
+// Simulates the real flow (DNS → ACME → edge) with no external calls: after `checksToIssue`
+// checks the certificate "issues", as if DNS propagation and ACME validation had passed.
 export class InMemoryDomainProvider implements DomainProvider {
   private readonly hosts = new Map<string, HostState>();
 
@@ -34,8 +34,8 @@ export class InMemoryDomainProvider implements DomainProvider {
     this.hosts.delete(hostname);
   }
 
-  // Testes: força o resultado de falha sem esperar as verificações simuladas.
-  markFailed(hostname: string, reason = "falha simulada"): void {
+  // Tests: forces the failure result without waiting for the simulated checks.
+  markFailed(hostname: string, reason = "simulated failure"): void {
     this.hosts.set(hostname, { status: "failed", reason, checks: this.hosts.get(hostname)?.checks ?? 0 });
   }
 }

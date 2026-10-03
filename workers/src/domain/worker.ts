@@ -9,7 +9,7 @@ import {
 import type { DomainProvider } from "./adapter.js";
 import type { DomainStore } from "./store.js";
 
-// Constantes e contrato vêm de @railway-like/shared: a API produz os jobs com as mesmas regras.
+// Constants and contract come from @railway-like/shared: the API produces jobs with the same rules.
 export { DOMAINS_QUEUE, ISSUE_CERTIFICATE_JOB, type IssueCertificateJobData };
 
 export const ISSUE_CERTIFICATE_JOB_OPTIONS: JobsOptions = ISSUE_CERTIFICATE_JOB_RETRY;
@@ -32,8 +32,8 @@ export type ProcessDomainResult =
   | { kind: "failed"; reason: string }
   | { kind: "not_found" };
 
-// Avança o domínio no fluxo DNS → ACME → edge (architecture.md §6 e §8). Idempotente: chamar de novo
-// com o domínio já "issued" não bate no provider outra vez.
+// Advances the domain through the DNS → ACME → edge flow (architecture.md §6 and §8). Idempotent:
+// calling it again with the domain already "issued" doesn't hit the provider again.
 export async function processDomain(deps: DomainWorkerDeps, domainId: string): Promise<ProcessDomainResult> {
   const domain = await deps.store.get(domainId);
   if (!domain) return { kind: "not_found" };
@@ -46,13 +46,13 @@ export async function processDomain(deps: DomainWorkerDeps, domainId: string): P
   }
   if (result.status === "failed") {
     await deps.store.setTlsState(domain.id, domain.tlsState, "failed");
-    return { kind: "failed", reason: result.reason ?? "emissão falhou" };
+    return { kind: "failed", reason: result.reason ?? "issuance failed" };
   }
-  return { kind: "pending", reason: "aguardando validação de DNS/ACME" };
+  return { kind: "pending", reason: "waiting for DNS/ACME validation" };
 }
 
-// Decide o que fazer com um job: pendência re-tenta até o orçamento acabar; no último retry,
-// o domínio vai para "failed" com o motivo. `budget` vem do BullMQ, para o orçamento ficar na fila.
+// Decides what to do with a job: a pending result retries until the budget runs out; on the last
+// retry, the domain goes to "failed" with the reason. `budget` comes from BullMQ, keeping the budget on the queue.
 export async function handleIssueCertificateJob(
   deps: DomainWorkerDeps,
   data: IssueCertificateJobData,
@@ -63,10 +63,10 @@ export async function handleIssueCertificateJob(
 
   const lastAttempt = budget.attemptsMade + 1 >= budget.maxAttempts;
   if (!lastAttempt) {
-    throw new Error(`${result.reason} (tentativa ${budget.attemptsMade + 1} de ${budget.maxAttempts})`);
+    throw new Error(`${result.reason} (attempt ${budget.attemptsMade + 1} of ${budget.maxAttempts})`);
   }
   await deps.store.setTlsState(data.domainId, "pending", "failed");
-  return { kind: "failed", reason: `tls não emitiu após ${budget.maxAttempts} tentativas: ${result.reason}` };
+  return { kind: "failed", reason: `tls did not issue after ${budget.maxAttempts} attempts: ${result.reason}` };
 }
 
 export function createDomainWorker(connection: ConnectionOptions, deps: DomainWorkerDeps): Worker<IssueCertificateJobData> {

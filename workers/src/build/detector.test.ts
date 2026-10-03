@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { detect } from "./detector.mjs";
 
-// Árvore em memória: cada teste descreve o repo como um mapa de arquivos.
+// In-memory tree: each test describes the repo as a map of files.
 function tree(files: Record<string, string>) {
   return {
     exists: (p: string) => p in files,
@@ -9,14 +9,14 @@ function tree(files: Record<string, string>) {
   };
 }
 
-describe("detector de stack", () => {
-  it("Dockerfile do repo tem prioridade e é usado como está", () => {
+describe("stack detector", () => {
+  it("a Dockerfile in the repo takes priority and is used as-is", () => {
     const result = detect(tree({ Dockerfile: "FROM scratch\n", "package.json": "{}" }));
     expect(result.kind).toBe("dockerfile");
     expect(result.dockerfile).toBe("FROM scratch\n");
   });
 
-  it("Node com lockfile npm e script start", () => {
+  it("Node with npm lockfile and start script", () => {
     const result = detect(
       tree({
         "package.json": JSON.stringify({ engines: { node: ">=20" }, scripts: { start: "node server.js" } }),
@@ -32,37 +32,37 @@ describe("detector de stack", () => {
     expect(result.justification).toContain("package-lock.json → npm ci");
   });
 
-  it("Node com pnpm usa corepack e frozen lockfile", () => {
+  it("Node with pnpm uses corepack and a frozen lockfile", () => {
     const result = detect(tree({ "package.json": JSON.stringify({ scripts: { start: "x" } }), "pnpm-lock.yaml": "" }));
     expect(result.dockerfile).toContain("RUN corepack enable && pnpm install --frozen-lockfile");
     expect(result.dockerfile).toContain('CMD ["pnpm","start"]');
   });
 
-  it("Node sem engines usa a versão padrão e diz isso na justificativa", () => {
+  it("Node without engines uses the default version and says so in the justification", () => {
     const result = detect(tree({ "package.json": "{}", "index.js": "" }));
     expect(result.dockerfile).toContain("FROM node:22-alpine");
-    expect(result.justification.join(" ")).toMatch(/sem engines.node/);
+    expect(result.justification.join(" ")).toMatch(/no engines.node/);
   });
 
-  it("Node sem start usa main ou index.js como entrypoint", () => {
+  it("Node without start uses main or index.js as the entrypoint", () => {
     const result = detect(tree({ "package.json": JSON.stringify({ main: "app.js" }), "app.js": "" }));
     expect(result.dockerfile).toContain('CMD ["node","app.js"]');
   });
 
-  it("Node sem script nem entrypoint é unknown com motivo", () => {
+  it("Node with neither a script nor an entrypoint is unknown with a reason", () => {
     const result = detect(tree({ "package.json": "{}" }));
     expect(result.kind).toBe("unknown");
     expect(result.dockerfile).toBeNull();
-    expect(result.justification.join(" ")).toMatch(/sem scripts.start/);
+    expect(result.justification.join(" ")).toMatch(/no scripts.start/);
   });
 
-  it("package.json inválido é unknown", () => {
-    const result = detect(tree({ "package.json": "{ não é json" }));
+  it("invalid package.json is unknown", () => {
+    const result = detect(tree({ "package.json": "{ not json" }));
     expect(result.kind).toBe("unknown");
-    expect(result.justification.join(" ")).toMatch(/não é JSON válido/);
+    expect(result.justification.join(" ")).toMatch(/is not valid JSON/);
   });
 
-  it("Python com requirements.txt e main.py", () => {
+  it("Python with requirements.txt and main.py", () => {
     const result = detect(tree({ "requirements.txt": "flask\n", "main.py": "" }));
     expect(result.kind).toBe("python");
     expect(result.dockerfile).toContain("FROM python:3.12-slim");
@@ -70,27 +70,27 @@ describe("detector de stack", () => {
     expect(result.dockerfile).toContain('CMD ["python","main.py"]');
   });
 
-  it("Python sem entrypoint reconhecido é unknown", () => {
+  it("Python without a recognized entrypoint is unknown", () => {
     const result = detect(tree({ "requirements.txt": "flask\n" }));
     expect(result.kind).toBe("unknown");
   });
 
-  it("Go usa a versão do go.mod e build multi-stage", () => {
+  it("Go uses the go.mod version and a multi-stage build", () => {
     const result = detect(tree({ "go.mod": "module x\n\ngo 1.22\n", "main.go": "" }));
     expect(result.kind).toBe("go");
     expect(result.dockerfile).toContain("FROM golang:1.22-alpine AS build");
     expect(result.dockerfile).toContain("COPY --from=build /out/app /app");
   });
 
-  it("Go sem main.go (biblioteca) é unknown", () => {
+  it("Go without main.go (library) is unknown", () => {
     const result = detect(tree({ "go.mod": "module x\n\ngo 1.22\n" }));
     expect(result.kind).toBe("unknown");
-    expect(result.justification.join(" ")).toMatch(/só pacotes de biblioteca/);
+    expect(result.justification.join(" ")).toMatch(/library-only packages/);
   });
 
-  it("repo sem nenhum arquivo de stack é unknown e pede Dockerfile", () => {
+  it("a repo with no recognized stack file is unknown and asks for a Dockerfile", () => {
     const result = detect(tree({ "README.md": "" }));
     expect(result.kind).toBe("unknown");
-    expect(result.justification.join(" ")).toMatch(/adicione um Dockerfile/);
+    expect(result.justification.join(" ")).toMatch(/add a Dockerfile/);
   });
 });

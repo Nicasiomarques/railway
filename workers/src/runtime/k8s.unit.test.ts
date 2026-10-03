@@ -9,34 +9,34 @@ const pod = (overrides: Partial<k8s.V1Pod> & { ready?: string }): k8s.V1Pod => (
 });
 
 describe("isPodReady", () => {
-  it("pod com Ready=True está pronto", () => {
+  it("pod with Ready=True is ready", () => {
     expect(isPodReady(pod({ ready: "True" }))).toBe(true);
   });
 
-  it("pod com Ready=False não está pronto", () => {
+  it("pod with Ready=False is not ready", () => {
     expect(isPodReady(pod({ ready: "False" }))).toBe(false);
   });
 
-  it("pod em terminação não conta, mesmo se ainda estiver Ready", () => {
+  it("a terminating pod doesn't count, even if still Ready", () => {
     expect(isPodReady(pod({ ready: "True", metadata: { deletionTimestamp: new Date() } }))).toBe(false);
   });
 });
 
 describe("specHash", () => {
-  it("é independente da ordem das variáveis", () => {
+  it("is independent of variable order", () => {
     expect(specHash({ image: "a@sha256:1", env: { A: "1", B: "2" } })).toBe(
       specHash({ image: "a@sha256:1", env: { B: "2", A: "1" } }),
     );
   });
 
-  it("muda quando o env muda ou a imagem muda", () => {
+  it("changes when the env changes or the image changes", () => {
     const base = specHash({ image: "a@sha256:1", env: { A: "1" } });
     expect(specHash({ image: "a@sha256:1", env: { A: "2" } })).not.toBe(base);
     expect(specHash({ image: "a@sha256:2", env: { A: "1" } })).not.toBe(base);
   });
 });
 
-// Mocka só o que `tailLogs` toca: a listagem de pods (CoreV1Api) e o cliente de log do SDK.
+// Mocks only what `tailLogs` touches: pod listing (CoreV1Api) and the SDK's log client.
 // Sem rede real; o cluster fica fora do escopo deste teste (ver k8s.integration.test.ts).
 function runtimeWithPods(items: k8s.V1Pod[]): { runtime: K8sRuntime; listNamespacedPod: ReturnType<typeof vi.fn> } {
   const listNamespacedPod = vi.fn().mockResolvedValue({ items });
@@ -53,7 +53,7 @@ async function collect(iter: AsyncIterable<string>): Promise<string[]> {
 describe("K8sRuntime.tailLogs", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("resolve o pod pelo label do workload e devolve as linhas do stream, na ordem", async () => {
+  it("resolves the pod by the workload's label and returns the stream's lines, in order", async () => {
     const readyPod = pod({ ready: "True", metadata: { name: "wl-1-abc" } });
     readyPod.spec = { containers: [{ name: "app" }] } as k8s.V1PodSpec;
     const { runtime, listNamespacedPod } = runtimeWithPods([readyPod]);
@@ -71,7 +71,7 @@ describe("K8sRuntime.tailLogs", () => {
     expect(lines).toEqual(["linha 1", "linha 2"]);
   });
 
-  it("sem pods para o workload, não gera nenhuma linha", async () => {
+  it("with no pods for the workload, yields no lines", async () => {
     const { runtime } = runtimeWithPods([]);
 
     expect(await collect(runtime.tailLogs({ name: "wl-1", namespace: "env-ns" }))).toEqual([]);

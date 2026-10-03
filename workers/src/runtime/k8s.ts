@@ -10,11 +10,11 @@ import {
   type EnvironmentRuntime,
 } from "./environment.js";
 
-// Porta em que o app escuta. Fixa nesta fase: o contrato de serviço ainda não tem porta configurável.
+// Port the app listens on. Fixed at this stage: the service contract doesn't have a configurable port yet.
 export const CONTAINER_PORT = 8080;
 
-// Todos os objetos são aplicados com server-side apply sob o mesmo field manager: aplicar de novo é idempotente
-// e campos removidos da spec saem do cluster.
+// All objects are applied with server-side apply under the same field manager: applying again is idempotent
+// and fields removed from the spec leave the cluster.
 const FIELD_MANAGER = "railway-like-reconciler";
 const LABEL_WORKLOAD = "platform/workload";
 const LABEL_SPEC_HASH = "platform/spec-hash";
@@ -57,7 +57,7 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
     );
   }
 
-  // Field manager próprio: o reconciliador e o provisionador podem gravar labels no mesmo namespace sem se apagarem.
+  // Own field manager: the reconciler and the provisioner can write labels to the same namespace without erasing each other's.
   async ensureNamespace(namespace: string, labels: Record<string, string>): Promise<void> {
     const ssa = k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.ServerSideApply);
     const body = namespaceObject(namespace, labels);
@@ -76,7 +76,7 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
   async applyQuota(namespace: string, quota: EnvironmentQuota): Promise<void> {
     const ssa = k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.ServerSideApply);
     const apply = { fieldManager: PROVISIONER_FIELD_MANAGER, force: true };
-    // LimitRange antes da quota: a quota de CPU/memória passa a valer para pods sem requests explícitos.
+    // LimitRange before the quota: the CPU/memory quota then applies to pods with no explicit requests.
     await this.core.patchNamespacedLimitRange(
       { name: "env-defaults", namespace, body: limitRangeObject(namespace), ...apply },
       ssa,
@@ -98,9 +98,9 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
 
     const template = deployment.spec?.template;
     const hash = template?.metadata?.labels?.[LABEL_SPEC_HASH];
-    if (!hash) throw new Error(`deployment ${namespace}/${name} sem ${LABEL_SPEC_HASH} no template`);
+    if (!hash) throw new Error(`deployment ${namespace}/${name} is missing ${LABEL_SPEC_HASH} on the template`);
 
-    // Só pods desta spec contam como prontos. Pods de uma versão anterior, ainda de pé no rollout, não.
+    // Only pods of this spec count as ready. Pods from a previous version, still standing during the rollout, don't.
     const pods = await this.core.listNamespacedPod({
       namespace,
       labelSelector: `${LABEL_WORKLOAD}=${name},${LABEL_SPEC_HASH}=${hash}`,
@@ -112,12 +112,12 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
     };
   }
 
-  // Tail direto do pod via `kubectl logs`-equivalente (follow: true); sem pipeline Loki/Vector no MVP
-  // (architecture.md §9). Sem réplica para ler, não há nada a fazer: encerra sem linhas.
+  // Direct pod tail via a `kubectl logs`-equivalent (follow: true); no Loki/Vector pipeline in the
+  // MVP (architecture.md §9). No replica to read from: nothing to do, ends with no lines.
   async *tailLogs({ name, namespace }: WorkloadRef, opts: { since?: string } = {}): AsyncIterable<string> {
     const pods = await this.core.listNamespacedPod({ namespace, labelSelector: `${LABEL_WORKLOAD}=${name}` });
-    // Prioriza um pod pronto; na ausência de um, o primeiro disponível (pode estar crashando, e aí os logs
-    // são exatamente o que se quer ver).
+    // Prefers a ready pod; failing that, the first one available (it could be crashing, in which
+    // case those logs are exactly what you want to see).
     const pod = pods.items.find(isPodReady) ?? pods.items[0];
     const podName = pod?.metadata?.name;
     if (!podName) return;
@@ -129,7 +129,7 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
       ...(opts.since ? { sinceTime: opts.since } : {}),
     });
     try {
-      // O stream chega em pedaços arbitrários; reparte em linhas e guarda o resto incompleto para o próximo pedaço.
+      // The stream arrives in arbitrary chunks; split it into lines and keep the incomplete remainder for the next chunk.
       let pending = "";
       for await (const chunk of stream) {
         pending += (chunk as Buffer).toString("utf8");
@@ -149,7 +149,7 @@ export function isPodReady(pod: k8s.V1Pod): boolean {
   return pod.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True") ?? false;
 }
 
-// O cliente lança erros com o status em `statusCode`, `response.statusCode` ou `code`, conforme a versão.
+// The client throws errors with the status in `statusCode`, `response.statusCode` or `code`, depending on the version.
 function statusOf(err: unknown): number | undefined {
   const e = err as { statusCode?: number; code?: number; response?: { statusCode?: number } };
   return e.statusCode ?? e.response?.statusCode ?? e.code;
@@ -180,7 +180,7 @@ function deploymentObject(spec: WorkloadSpec, hash: string, secretName: string):
     metadata: { name: spec.name, namespace: spec.namespace, labels: { [LABEL_WORKLOAD]: spec.name } },
     spec: {
       replicas: spec.replicas,
-      // O seletor é imutável no Kubernetes: fica só com o nome do workload, sem o hash.
+      // The selector is immutable in Kubernetes: it stays with just the workload name, without the hash.
       selector: { matchLabels: { [LABEL_WORKLOAD]: spec.name } },
       template: {
         metadata: { labels: { [LABEL_WORKLOAD]: spec.name, [LABEL_SPEC_HASH]: hash } },
@@ -193,7 +193,7 @@ function deploymentObject(spec: WorkloadSpec, hash: string, secretName: string):
               ports: [{ containerPort: CONTAINER_PORT }],
               envFrom: [{ secretRef: { name: secretName } }],
               readinessProbe: { tcpSocket: { port: CONTAINER_PORT }, periodSeconds: 2 },
-              // FS não é somente leitura: imagens de usuário costumam escrever fora de /tmp.
+              // FS isn't read-only: user images often write outside of /tmp.
               securityContext: {
                 allowPrivilegeEscalation: false,
                 capabilities: { drop: ["ALL"] },

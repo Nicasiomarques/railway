@@ -14,26 +14,26 @@ function setup(checksToIssue = 1) {
 }
 
 describe("processDomain", () => {
-  it("domínio inexistente volta not_found", async () => {
+  it("a nonexistent domain returns not_found", async () => {
     const { deps } = setup();
     expect(await processDomain(deps, "outro-id")).toEqual({ kind: "not_found" });
   });
 
-  it("emite e grava tls_state=issued quando o provider confirma", async () => {
+  it("issues and writes tls_state=issued when the provider confirms", async () => {
     const { deps, store } = setup(1);
 
     expect(await processDomain(deps, DOMAIN_ID)).toEqual({ kind: "issued" });
     expect((await store.get(DOMAIN_ID))!.tlsState).toBe("issued");
   });
 
-  it("fica pending sem alterar o store enquanto o provider não confirma", async () => {
+  it("stays pending without changing the store while the provider hasn't confirmed", async () => {
     const { deps, store } = setup(2);
 
     expect(await processDomain(deps, DOMAIN_ID)).toEqual({ kind: "pending", reason: expect.any(String) });
     expect((await store.get(DOMAIN_ID))!.tlsState).toBe("pending");
   });
 
-  it("é idempotente: domínio já issued não bate no provider de novo", async () => {
+  it("is idempotent: an already-issued domain doesn't hit the provider again", async () => {
     const { deps, provider } = setup(1);
     await processDomain(deps, DOMAIN_ID);
     const spy = vi.spyOn(provider, "issueCertificate");
@@ -42,26 +42,26 @@ describe("processDomain", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it("falha do provider grava tls_state=failed com o motivo", async () => {
+  it("a provider failure writes tls_state=failed with the reason", async () => {
     const { deps, store, provider } = setup();
-    provider.markFailed(HOSTNAME, "DNS não resolve para o IP do edge");
+    provider.markFailed(HOSTNAME, "DNS does not resolve to the edge's IP");
 
-    expect(await processDomain(deps, DOMAIN_ID)).toEqual({ kind: "failed", reason: "DNS não resolve para o IP do edge" });
+    expect(await processDomain(deps, DOMAIN_ID)).toEqual({ kind: "failed", reason: "DNS does not resolve to the edge's IP" });
     expect((await store.get(DOMAIN_ID))!.tlsState).toBe("failed");
   });
 });
 
 describe("handleIssueCertificateJob", () => {
-  it("pendência com orçamento sobrando lança erro para o BullMQ re-tentar", async () => {
+  it("a pending result with budget left throws an error for BullMQ to retry", async () => {
     const { deps, store } = setup(3);
 
     await expect(
       handleIssueCertificateJob(deps, { domainId: DOMAIN_ID }, { attemptsMade: 0, maxAttempts: 5 }),
-    ).rejects.toThrow(/tentativa 1 de 5/);
+    ).rejects.toThrow(/attempt 1 of 5/);
     expect((await store.get(DOMAIN_ID))!.tlsState).toBe("pending");
   });
 
-  it("na última tentativa sem emitir, o domínio vai para failed", async () => {
+  it("on the last attempt without issuing, the domain goes to failed", async () => {
     const { deps, store } = setup(10);
 
     const result = await handleIssueCertificateJob(deps, { domainId: DOMAIN_ID }, { attemptsMade: 4, maxAttempts: 5 });
@@ -70,7 +70,7 @@ describe("handleIssueCertificateJob", () => {
     expect((await store.get(DOMAIN_ID))!.tlsState).toBe("failed");
   });
 
-  it("emite dentro do orçamento, sem precisar da última tentativa", async () => {
+  it("issues within budget, without needing the last attempt", async () => {
     const { deps, store } = setup(1);
 
     const result = await handleIssueCertificateJob(deps, { domainId: DOMAIN_ID }, { attemptsMade: 0, maxAttempts: 5 });

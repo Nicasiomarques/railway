@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { domains, type Db } from "@railway-like/db";
 import type { DomainRecord, DomainStore } from "./store.js";
 
-// Store Postgres do worker de domínio.
+// Postgres store for the domain worker.
 export class PostgresDomainStore implements DomainStore {
   constructor(private readonly db: Db) {}
 

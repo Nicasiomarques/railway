@@ -1,23 +1,23 @@
-// Porta do provedor de domínio/TLS (architecture.md §6 e §8): hostname → DNS → certificado ACME → rota no edge.
-// Só o worker de domínio chama esta interface. Implementações: InMemoryDomainProvider (testes e ambiente
-// sem infra real). Uma implementação real de DNS/ACME fica para depois, atrás desta mesma porta.
+// Domain/TLS provider port (architecture.md §6 and §8): hostname → DNS → ACME certificate → edge route.
+// Only the domain worker calls this interface. Implementations: InMemoryDomainProvider (tests and
+// environments without real infra). A real DNS/ACME implementation comes later, behind this same port.
 
 export type CertificateStatus = "pending" | "issued" | "failed";
 
 export interface CertificateResult {
   status: CertificateStatus;
-  // Motivo legível quando status é "failed"; null nos demais casos.
+  // Human-readable reason when status is "failed"; null otherwise.
   reason: string | null;
 }
 
 export interface DomainProvider {
-  // Inicia o fluxo para o hostname: valida DNS, solicita o certificado ACME e prepara a rota no edge.
-  // Idempotente: chamar de novo para um hostname já em andamento não reinicia o fluxo.
+  // Starts the flow for the hostname: validates DNS, requests the ACME certificate and sets up the edge route.
+  // Idempotent: calling it again for a hostname already in progress doesn't restart the flow.
   issueCertificate(hostname: string): Promise<CertificateResult>;
 
-  // Consulta o estado atual do fluxo, sem reiniciá-lo.
+  // Checks the flow's current state, without restarting it.
   checkStatus(hostname: string): Promise<CertificateResult>;
 
-  // Desfaz: remove a rota no edge e libera/revoga o que foi reservado para o hostname (domínio removido).
+  // Undoes it: removes the edge route and releases/revokes whatever was reserved for the hostname (domain removed).
   release(hostname: string): Promise<void>;
 }
