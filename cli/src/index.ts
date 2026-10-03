@@ -7,7 +7,7 @@ import { rollbackCommand } from "./commands/rollback.js";
 import { statusCommand } from "./commands/status.js";
 import { formatError } from "./http.js";
 
-// Envolve cada action: erros (ApiProblem ou outros) saem como mensagem legível, nunca JSON bruto ou stack trace.
+// Wraps each action: errors (ApiProblem or otherwise) come out as a readable message, never raw JSON or a stack trace.
 function wrap<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
   return async (...args: A) => {
     try {
@@ -21,61 +21,61 @@ function wrap<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
 
 const program = new Command();
 
-program.name("railway-like").description("CLI da plataforma").version("0.0.0");
+program.name("railway-like").description("Platform CLI").version("0.0.0");
 
 program
   .command("login")
-  .description("Autentica: pede a URL da API e o token, valida e grava em ~/.railway-like/config.json")
+  .description("Authenticate: asks for the API URL and token, validates them and saves to ~/.railway-like/config.json")
   .action(wrap(loginCommand));
 
 program
   .command("init")
-  .description("Configura o diretório atual com organização, projeto, ambiente e serviço escolhidos")
+  .description("Configures the current directory with the chosen organization, project, environment and service")
   .action(wrap(initCommand));
 
 program
   .command("deploy")
-  .description("Redeploy do serviço configurado (mesma imagem/commit do último deployment)")
-  .option("--instance <id>", "ID da instância de serviço (sobrepõe o config do projeto)")
+  .description("Redeploys the configured service (same image/commit as the last deployment)")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((opts: { instance?: string }) => deployCommand(opts)));
 
 program
   .command("status")
-  .description("Lista os deployments recentes e o estado atual da instância")
-  .option("--instance <id>", "ID da instância de serviço (sobrepõe o config do projeto)")
+  .description("Lists recent deployments and the instance's current state")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((opts: { instance?: string }) => statusCommand(opts)));
 
 program
   .command("rollback")
-  .description("Reverte para um deployment anterior")
-  .argument("<deploymentId>", "ID do deployment para o qual reverter")
+  .description("Rolls back to a previous deployment")
+  .argument("<deploymentId>", "ID of the deployment to roll back to")
   .action(wrap((deploymentId: string) => rollbackCommand(deploymentId)));
 
-// TODO: logs — rota ainda não existe (ver docs/architecture.md §9; GET /v1/deployments/{id}/logs
-// hoje só devolve o último retrato do build, sem tail em tempo real).
-// TODO: domain — rota ainda não existe.
+// TODO: logs — GET /v1/deployments/{id}/logs now supports ?stream=build|runtime (SSE), but no CLI
+// command wraps it yet.
+// TODO: domain — the route doesn't exist yet.
 
-const env = program.command("env").description("Gerencia variáveis de ambiente do serviço configurado");
+const env = program.command("env").description("Manages the configured service's environment variables");
 
 env
   .command("list")
-  .description("Lista as variáveis da instância (secrets aparecem mascarados)")
-  .option("--instance <id>", "ID da instância de serviço (sobrepõe o config do projeto)")
+  .description("Lists the instance's variables (secrets appear masked)")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((opts: { instance?: string }) => envListCommand(opts)));
 
 env
   .command("set")
-  .description("Cria ou atualiza uma variável")
-  .argument("<assignment>", "no formato KEY=VALUE")
-  .option("--secret", "marca a variável como secreta")
-  .option("--instance <id>", "ID da instância de serviço (sobrepõe o config do projeto)")
+  .description("Creates or updates a variable")
+  .argument("<assignment>", "in KEY=VALUE format")
+  .option("--secret", "marks the variable as secret")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((assignment: string, opts: { instance?: string; secret?: boolean }) => envSetCommand(assignment, opts)));
 
 env
   .command("unset")
-  .description("Remove uma variável")
+  .description("Removes a variable")
   .argument("<key>")
-  .option("--instance <id>", "ID da instância de serviço (sobrepõe o config do projeto)")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((key: string, opts: { instance?: string }) => envUnsetCommand(key, opts)));
 
 await program.parseAsync(process.argv);

@@ -8,7 +8,7 @@ export async function envListCommand(opts: { instance?: string } = {}): Promise<
 
   const result = await apiRequest<ListOf<VariableListItem>>(ctx, "GET", `/services/${instanceId}/variables`);
   if (result.data.length === 0) {
-    console.log("Nenhuma variável definida para esta instância.");
+    console.log("No variables defined for this instance.");
     return;
   }
 
@@ -21,7 +21,7 @@ export async function envListCommand(opts: { instance?: string } = {}): Promise<
 export async function envSetCommand(assignment: string, opts: { instance?: string; secret?: boolean } = {}): Promise<void> {
   const separator = assignment.indexOf("=");
   if (separator <= 0) {
-    throw new Error("Use o formato `KEY=VALUE`.");
+    throw new Error("Use the `KEY=VALUE` format.");
   }
   const key = assignment.slice(0, separator);
   const value = assignment.slice(separator + 1);
@@ -35,7 +35,7 @@ export async function envSetCommand(assignment: string, opts: { instance?: strin
     `/services/${instanceId}/variables/${key}`,
     { json: { value, isSecret: opts.secret ?? false } },
   );
-  console.log(`${result.key} salva (versão ${result.version}).`);
+  console.log(`${result.key} saved (version ${result.version}).`);
 }
 
 export async function envUnsetCommand(key: string, opts: { instance?: string } = {}): Promise<void> {
@@ -43,5 +43,5 @@ export async function envUnsetCommand(key: string, opts: { instance?: string } =
   const instanceId = resolveInstanceId(ctx, opts.instance);
 
   await apiRequest<void>(ctx, "DELETE", `/services/${instanceId}/variables/${key}`);
-  console.log(`${key} removida.`);
+  console.log(`${key} removed.`);
 }

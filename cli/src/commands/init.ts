@@ -22,28 +22,28 @@ export async function initCommand(): Promise<void> {
 
   const organizations = await apiRequest<ListOf<Organization>>(ctx, "GET", "/organizations");
   if (organizations.data.length === 0) {
-    throw new Error("Nenhuma organização encontrada para este token. Crie uma pela API antes de rodar `init`.");
+    throw new Error("No organization found for this token. Create one through the API before running `init`.");
   }
   const organization = await select(
-    "Organização",
+    "Organization",
     organizations.data.map((org) => ({ label: `${org.name} (${org.slug})`, value: org })),
   );
 
   const projects = await fetchAllProjects(ctx, organization.id);
   if (projects.length === 0) {
-    throw new Error(`A organização "${organization.name}" não tem projetos ainda.`);
+    throw new Error(`Organization "${organization.name}" has no projects yet.`);
   }
   const project = await select(
-    "Projeto",
+    "Project",
     projects.map((p) => ({ label: `${p.name} (${p.slug})`, value: p })),
   );
 
   const environments = await apiRequest<ListOf<Environment>>(ctx, "GET", `/projects/${project.id}/environments`);
   if (environments.data.length === 0) {
-    throw new Error(`O projeto "${project.name}" não tem ambientes.`);
+    throw new Error(`Project "${project.name}" has no environments.`);
   }
   const environment = await select(
-    "Ambiente",
+    "Environment",
     environments.data.map((env) => ({ label: `${env.name} (${env.type})`, value: env })),
   );
 
@@ -52,10 +52,10 @@ export async function initCommand(): Promise<void> {
     .map((service) => ({ service, instance: service.instances.find((i) => i.environmentId === environment.id) }))
     .filter((entry): entry is { service: Service; instance: NonNullable<typeof entry.instance> } => entry.instance !== undefined);
   if (optionsPerService.length === 0) {
-    throw new Error(`O projeto "${project.name}" não tem serviços no ambiente "${environment.name}".`);
+    throw new Error(`Project "${project.name}" has no services in environment "${environment.name}".`);
   }
   const chosen = await select(
-    "Serviço (usado por `deploy`, `status` e `env`)",
+    "Service (used by `deploy`, `status` and `env`)",
     optionsPerService.map(({ service, instance }) => ({ label: service.name, value: { service, instance } })),
   );
 
@@ -71,5 +71,5 @@ export async function initCommand(): Promise<void> {
   };
 
   const path = saveProjectConfig(process.cwd(), config);
-  console.log(`Configuração salva em ${path}.`);
+  console.log(`Configuration saved to ${path}.`);
 }

@@ -14,11 +14,11 @@ export async function ask(question: string, defaultValue?: string): Promise<stri
 
 export type SelectItem<T> = { label: string; value: T };
 
-// Menu numerado simples; evita trazer uma dependência extra só para prompts interativos.
+// Simple numbered menu; avoids pulling in an extra dependency just for interactive prompts.
 export async function select<T>(question: string, items: SelectItem<T>[]): Promise<T> {
-  if (items.length === 0) throw new Error("Nenhuma opção disponível.");
+  if (items.length === 0) throw new Error("No options available.");
   if (items.length === 1) {
-    console.log(`${question}: ${items[0]!.label} (única opção)`);
+    console.log(`${question}: ${items[0]!.label} (only option)`);
     return items[0]!.value;
   }
 
@@ -28,10 +28,10 @@ export async function select<T>(question: string, items: SelectItem<T>[]): Promi
   const rl = createInterface({ input: stdin, output: stdout });
   try {
     while (true) {
-      const raw = (await rl.question("Escolha o número: ")).trim();
+      const raw = (await rl.question("Choose a number: ")).trim();
       const n = Number(raw);
       if (Number.isInteger(n) && n >= 1 && n <= items.length) return items[n - 1]!.value;
-      console.log("Opção inválida, tente de novo.");
+      console.log("Invalid option, try again.");
     }
   } finally {
     rl.close();

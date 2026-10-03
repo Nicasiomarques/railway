@@ -11,15 +11,15 @@ export async function statusCommand(opts: { instance?: string } = {}): Promise<v
   });
 
   if (result.data.length === 0) {
-    console.log("Nenhum deployment encontrado para esta instância.");
+    console.log("No deployments found for this instance.");
     return;
   }
 
   const current = result.data.find((d) => d.status === "Running");
-  console.log(`Instância: ${instanceId}`);
-  console.log(`Estado atual: ${current ? `v${current.versionNo} (${current.id}) Running` : "nenhum deployment Running"}`);
+  console.log(`Instance: ${instanceId}`);
+  console.log(`Current state: ${current ? `v${current.versionNo} (${current.id}) Running` : "no Running deployment"}`);
   console.log("");
-  console.log("Versão  Status          Trigger   Deployment                            Criado em");
+  console.log("Version  Status          Trigger   Deployment                            Created at");
   for (const d of result.data) {
     console.log(
       `${String(d.versionNo).padEnd(7)} ${d.status.padEnd(15)} ${d.trigger.padEnd(9)} ${d.id}  ${d.createdAt}`,

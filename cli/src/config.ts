@@ -20,8 +20,8 @@ export function loadGlobalConfig(): GlobalConfig | null {
   }
 }
 
-// Token guardado em texto puro, como o hash sha256 do lado da API só compara igualdade;
-// por isso o arquivo precisa ficar com permissões restritas (600).
+// Token stored in plain text, since the API side only compares the sha256 hash for equality;
+// that's why the file needs restricted permissions (600).
 export function saveGlobalConfig(config: GlobalConfig): void {
   mkdirSync(GLOBAL_DIR, { recursive: true, mode: 0o700 });
   writeFileSync(GLOBAL_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
@@ -29,7 +29,7 @@ export function saveGlobalConfig(config: GlobalConfig): void {
 }
 
 export type ProjectConfig = {
-  // Sobrepõe a URL da API do config global, só se o projeto precisar de outro ambiente.
+  // Overrides the API URL from the global config, only if the project needs a different environment.
   apiUrl?: string;
   organizationId: string;
   organizationName?: string;
@@ -50,7 +50,7 @@ export function projectConfigPathIn(dir: string): string {
 
 export type FoundProjectConfig = { dir: string; path: string; config: ProjectConfig };
 
-// Sobe diretórios a partir de `startDir` até achar `.railway-like/config.json`, como o `.git` do Git.
+// Walks up directories from `startDir` until it finds `.railway-like/config.json`, like Git's `.git`.
 export function findProjectConfig(startDir: string = process.cwd()): FoundProjectConfig | null {
   let dir = resolve(startDir);
   while (true) {

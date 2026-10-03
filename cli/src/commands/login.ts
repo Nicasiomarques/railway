@@ -5,15 +5,15 @@ import type { ListOf, Organization } from "../types.js";
 
 export async function loginCommand(): Promise<void> {
   const existing = loadGlobalConfig();
-  const apiUrl = (await ask("URL da API", existing?.apiUrl ?? "http://localhost:3000")).replace(/\/+$/, "");
-  const token = await ask("Token de API", existing?.token);
+  const apiUrl = (await ask("API URL", existing?.apiUrl ?? "http://localhost:3000")).replace(/\/+$/, "");
+  const token = await ask("API token", existing?.token);
   if (!apiUrl || !token) {
-    throw new Error("URL da API e token são obrigatórios.");
+    throw new Error("API URL and token are required.");
   }
 
-  // Valida o token com uma chamada simples, como o TokenGate faz no front-end (ver web/src/components/TokenGate.tsx).
+  // Validates the token with a simple call, the same way TokenGate does on the front-end (see web/src/components/TokenGate.tsx).
   await apiRequest<ListOf<Organization>>({ apiUrl, token }, "GET", "/organizations");
 
   saveGlobalConfig({ apiUrl, token });
-  console.log(`Login salvo em ${GLOBAL_CONFIG_FILE}.`);
+  console.log(`Login saved to ${GLOBAL_CONFIG_FILE}.`);
 }

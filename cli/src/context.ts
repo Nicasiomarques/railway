@@ -6,8 +6,9 @@ export type Context = ApiClientConfig & {
   projectDir: string | null;
 };
 
-// Resolve a URL/token do login global e, se existir, o config do projeto (`.railway-like/config.json`
-// no diretório atual ou em algum ancestral). O config do projeto pode sobrepor a URL da API.
+// Resolves the URL/token from the global login and, if present, the project config
+// (`.railway-like/config.json` in the current directory or an ancestor). The project
+// config can override the API URL.
 export function resolveContext(): Context {
   const global = requireGlobalConfig();
   const found = findProjectConfig();
@@ -23,7 +24,7 @@ export function resolveInstanceId(ctx: Context, override?: string): string {
   const instanceId = override ?? ctx.project?.serviceInstanceId;
   if (!instanceId) {
     throw new Error(
-      "Nenhuma instância de serviço configurada. Rode `railway-like init` no diretório do projeto ou use --instance <id>.",
+      "No service instance configured. Run `railway-like init` in the project directory, or use --instance <id>.",
     );
   }
   return instanceId;

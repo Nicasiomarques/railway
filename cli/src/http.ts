@@ -8,7 +8,7 @@ type ProblemBody = {
   errors?: { path: string; message: string }[];
 };
 
-// Espelha o formato RFC 9457 (problem+json) devolvido pela API (ver api/src/app.ts).
+// Mirrors the RFC 9457 (problem+json) format returned by the API (see api/src/app.ts).
 export class ApiProblem extends Error {
   constructor(
     public readonly status: number,
@@ -50,7 +50,7 @@ export async function apiRequest<T>(
     throw new ApiProblem(
       0,
       "network_error",
-      `Não foi possível contactar a API em ${cfg.apiUrl}: ${(err as Error).message}`,
+      `Could not reach the API at ${cfg.apiUrl}: ${(err as Error).message}`,
     );
   }
 
@@ -66,12 +66,12 @@ async function toApiProblem(res: Response): Promise<ApiProblem> {
   try {
     body = (await res.json()) as ProblemBody;
   } catch {
-    // Resposta sem corpo JSON (ex. proxy/gateway no meio do caminho).
+    // Response with no JSON body (e.g. a proxy/gateway in the middle).
   }
   return new ApiProblem(
     res.status,
     body.code ?? "http_error",
-    body.detail ?? res.statusText ?? `Erro HTTP ${res.status}`,
+    body.detail ?? res.statusText ?? `HTTP error ${res.status}`,
     body.errors,
   );
 }
@@ -82,13 +82,13 @@ export function requireGlobalConfig(): ApiClientConfig {
     throw new ApiProblem(
       0,
       "not_authenticated",
-      "Nenhum login encontrado. Rode `railway-like login` primeiro.",
+      "No login found. Run `railway-like login` first.",
     );
   }
   return config;
 }
 
-// Usado para erros de qualquer origem (ApiProblem, erro de validação local etc.), nunca o JSON bruto.
+// Used for errors from any source (ApiProblem, local validation error, etc.), never the raw JSON.
 export function formatError(err: unknown): string {
   if (err instanceof ApiProblem) {
     const lines = [`${err.message} (${err.code})`];

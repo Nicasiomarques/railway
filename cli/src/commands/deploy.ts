@@ -2,8 +2,8 @@ import { resolveContext, resolveInstanceId } from "../context.js";
 import { apiRequest } from "../http.js";
 import type { Deployment, ListOf } from "../types.js";
 
-// Redeploy manual: repete a mesma imagem/commit do último deployment, com um snapshot de env novo
-// (architecture.md §5.2, "Redeploy manual"). A API não builda nada aqui.
+// Manual redeploy: repeats the same image/commit as the last deployment, with a new env snapshot
+// (architecture.md §5.2, "Manual redeploy"). The API doesn't build anything here.
 export async function deployCommand(opts: { instance?: string } = {}): Promise<void> {
   const ctx = resolveContext();
   const instanceId = resolveInstanceId(ctx, opts.instance);
@@ -14,12 +14,12 @@ export async function deployCommand(opts: { instance?: string } = {}): Promise<v
   const last = previous.data[0];
   if (!last) {
     throw new Error(
-      "Esta instância ainda não tem nenhum deployment; `deploy` só reenvia a imagem/commit do último. Crie o primeiro deployment pela API.",
+      "This instance has no deployment yet; `deploy` only resends the last one's image/commit. Create the first deployment through the API.",
     );
   }
 
   const body = last.imageDigest ? { imageDigest: last.imageDigest } : { commitSha: last.commitSha };
   const deployment = await apiRequest<Deployment>(ctx, "POST", `/services/${instanceId}/deployments`, { json: body });
 
-  console.log(`Deployment v${deployment.versionNo} (${deployment.id}) criado com status ${deployment.status}.`);
+  console.log(`Deployment v${deployment.versionNo} (${deployment.id}) created with status ${deployment.status}.`);
 }
