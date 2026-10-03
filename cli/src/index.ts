@@ -1,8 +1,10 @@
 import { Command } from "commander";
 import { deployCommand } from "./commands/deploy.js";
+import { domainAddCommand, domainListCommand, domainRemoveCommand } from "./commands/domain.js";
 import { envListCommand, envSetCommand, envUnsetCommand } from "./commands/env.js";
 import { initCommand } from "./commands/init.js";
 import { loginCommand } from "./commands/login.js";
+import { logsCommand } from "./commands/logs.js";
 import { rollbackCommand } from "./commands/rollback.js";
 import { statusCommand } from "./commands/status.js";
 import { formatError } from "./http.js";
@@ -51,9 +53,16 @@ program
   .argument("<deploymentId>", "ID of the deployment to roll back to")
   .action(wrap((deploymentId: string) => rollbackCommand(deploymentId)));
 
-// TODO: logs — GET /v1/deployments/{id}/logs now supports ?stream=build|runtime (SSE), but no CLI
-// command wraps it yet.
-// TODO: domain — the route doesn't exist yet.
+program
+  .command("logs")
+  .description("Shows deployment logs: a build snapshot by default, or a live tail with --stream")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
+  .option("--deployment <id>", "Deployment ID (defaults to the instance's current Running deployment)")
+  .option("--stream <stream>", "Tails logs live over SSE: build or runtime")
+  .option("--since <timestamp>", "Only with --stream runtime: show logs from this RFC3339 timestamp on")
+  .action(
+    wrap((opts: { instance?: string; deployment?: string; stream?: string; since?: string }) => logsCommand(opts)),
+  );
 
 const env = program.command("env").description("Manages the configured service's environment variables");
 
@@ -77,5 +86,30 @@ env
   .argument("<key>")
   .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((key: string, opts: { instance?: string }) => envUnsetCommand(key, opts)));
+
+const domain = program.command("domain").description("Manages the configured service's domains");
+
+domain
+  .command("list")
+  .description("Lists the instance's domains")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
+  .action(wrap((opts: { instance?: string }) => domainListCommand(opts)));
+
+domain
+  .command("add")
+  .description("Creates a domain for the instance: auto generates the hostname, custom takes --hostname")
+  .option("--type <type>", "auto or custom")
+  .option("--hostname <hostname>", "Required for --type custom")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
+  .action(
+    wrap((opts: { instance?: string; type?: string; hostname?: string }) => domainAddCommand(opts)),
+  );
+
+domain
+  .command("remove")
+  .description("Removes a domain from the instance")
+  .argument("<domainId>", "ID of the domain to remove")
+  .option("--instance <id>", "Service instance ID (overrides the project config)")
+  .action(wrap((domainId: string, opts: { instance?: string }) => domainRemoveCommand(domainId, opts)));
 
 await program.parseAsync(process.argv);
