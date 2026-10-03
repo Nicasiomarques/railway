@@ -82,3 +82,36 @@ export const ISSUE_CERTIFICATE_JOB_RETRY = {
   removeOnComplete: true,
   removeOnFail: 100,
 } as const;
+
+// Volume backups (architecture.md §6: "PVC + scheduled backup (volume snapshot + logical dump)
+// to object storage"). Own queue: a backup's lifecycle has no relation to a domain's or a deployment's.
+export const BACKUP_QUEUE = "backups";
+export const RUN_BACKUP_JOB = "run-backup";
+
+export interface RunBackupJobData {
+  volumeId: string;
+}
+
+// One job per volume per enqueue call: re-enqueuing a volume already queued doesn't duplicate the work.
+export function runBackupJobId(data: RunBackupJobData): string {
+  return `run-backup-${data.volumeId}`;
+}
+
+// Unlike domain issuance there's no external propagation to wait out: a backup attempt either
+// completes or fails. Retries only cover a transient failure (storage momentarily unreachable),
+// so the budget is short, with exponential backoff instead of a fixed interval.
+export const RUN_BACKUP_JOB_RETRY = {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+// Internal "tick" job name used to wire a daily schedule to the backup queue (see
+// workers/src/backup/worker.ts: scheduleDailyBackups/createBackupWorker). Not part of the
+// API/worker job contract in the same sense as RUN_BACKUP_JOB: nothing produces this job today
+// outside of scheduleDailyBackups itself.
+export const DAILY_BACKUP_TICK_JOB = "daily-backup-tick";
+
+// Default daily schedule for `scheduleDailyBackups`: once a day at 03:00 UTC (low-traffic window).
+export const DAILY_BACKUP_CRON_DEFAULT = "0 3 * * *";
