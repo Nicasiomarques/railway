@@ -30,6 +30,12 @@ export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES)
 export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy"]);
 export const domainType = pgEnum("domain_type", ["auto", "custom"]);
 export const variableScope = pgEnum("variable_scope", ["project", "environment", "service_instance"]);
+export const environmentProvisioningStatus = pgEnum("environment_provisioning_status", [
+  "pending",
+  "provisioning",
+  "ready",
+  "failed",
+]);
 
 // Identidade vem de provedor externo; guardamos só o vínculo.
 export const users = pgTable(
@@ -98,6 +104,10 @@ export const environments = pgTable(
     branchRule: text("branch_rule"),
     ttlAt: timestamp("ttl_at", { withTimezone: true }),
     sleepPolicy: jsonb("sleep_policy"),
+    // Saga de provisionamento (architecture.md §6): cada passo concluído fica registrado para retomar do ponto de falha.
+    provisioningStatus: environmentProvisioningStatus("provisioning_status").notNull().default("pending"),
+    provisioningSteps: jsonb("provisioning_steps").$type<string[]>().notNull().default([]),
+    provisioningError: text("provisioning_error"),
     ...timestamps,
     ...softDelete,
   },
@@ -115,6 +125,8 @@ export const services = pgTable(
     name: text("name").notNull(),
     kind: text("kind").notNull(),
     source: serviceSource("source").notNull(),
+    // Só para source github_repo: URL do clone. Commits chegam pelo deployment.
+    repoUrl: text("repo_url"),
     rootDir: text("root_dir").notNull().default("/"),
     detectionSnapshot: jsonb("detection_snapshot"),
     ...timestamps,
@@ -204,6 +216,16 @@ export const builds = pgTable("builds", {
   durationMs: integer("duration_ms"),
   exitCode: integer("exit_code"),
   ...timestamps,
+});
+
+// Último retrato dos logs do build (gate, clone e build). Uma linha por deployment, sobrescrita a cada leitura.
+// O builds.logsRef fica para armazenamento externo no futuro; por enquanto o conteúdo fica aqui.
+export const buildLogs = pgTable("build_logs", {
+  deploymentId: uuid("deployment_id")
+    .primaryKey()
+    .references(() => deployments.id),
+  content: text("content").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const variables = pgTable(

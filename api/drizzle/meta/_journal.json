@@ -22,6 +22,27 @@
       "when": 1791039883241,
       "tag": "0002_fearless_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791044860667,
+      "tag": "0003_service_repo_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791057743547,
+      "tag": "0004_build_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791063419888,
+      "tag": "0005_environment_provisioning",
+      "breakpoints": true
     }
   ]
 }

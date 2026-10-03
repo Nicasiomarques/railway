@@ -1,0 +1,11 @@
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import * as schema from "./schema.js";
+
+export type Db = NodePgDatabase<typeof schema>;
+
+// Cada app cria o próprio pool: API e workers não compartilham conexões nem estado de módulo.
+export function createDb(connectionString = process.env.DATABASE_URL ?? "postgres://railway:railway@localhost:5432/railway_like"): { db: Db; pool: Pool } {
+  const pool = new Pool({ connectionString });
+  return { db: drizzle({ client: pool, schema }), pool };
+}
