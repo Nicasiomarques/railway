@@ -6,6 +6,7 @@ import { ApiError } from "../errors.js";
 import { decryptValue, encryptValue, type Keyring } from "../crypto/envelope.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, variables } from "../db/schema.js";
+import { resolveInstanceEnv, validateReferences } from "../env/resolve.js";
 
 const instanceParams = z.object({ instanceId: z.string().uuid() });
 const keyParams = instanceParams.extend({
@@ -42,9 +43,21 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
     };
   });
 
+  // Ambiente final da instância, com referências resolvidas. Secrets vêm mascarados.
+  app.get("/services/:instanceId/env", async (request) => {
+    const { instanceId } = instanceParams.parse(request.params);
+    await requireInstanceAccess(db, request.auth!.userId, instanceId);
+
+    const resolved = await resolveInstanceEnv(db, keyring, instanceId);
+    return {
+      data: resolved.map((v) => ({ key: v.key, isSecret: v.isSecret, value: v.isSecret ? null : v.value })),
+    };
+  });
+
   app.put("/services/:instanceId/variables/:key", async (request) => {
     const { instanceId, key } = keyParams.parse(request.params);
     const body = upsertBody.parse(request.body);
+    validateReferences(body.value);
     const userId = request.auth!.userId;
     const { organizationId } = await requireInstanceAccess(db, userId, instanceId, { write: true });
 
