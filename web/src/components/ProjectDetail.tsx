@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiProblem, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
+import { DeploymentsPanel } from "./DeploymentsPanel";
 
 const KINDS = ["web", "worker", "postgres", "redis"] as const;
 const SOURCES = ["github_repo", "image", "template"] as const;
@@ -21,6 +22,7 @@ export function ProjectDetail({
   const [form, setForm] = useState({ name: "", kind: "web", source: "github_repo" });
   const [error, setError] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState<{ instanceId: string; serviceName: string; source: string } | null>(null);
 
   const environments = useQuery({
     queryKey: ["environments", projectId],
@@ -143,23 +145,46 @@ export function ProjectDetail({
       {error && <p className="error">{error}</p>}
 
       <ul className="list">
-        {services.data?.map((s) => (
-          <li key={s.id} className="card-row">
-            <div>
-              <strong>{s.name}</strong> <span className="pill">{s.kind}</span>{" "}
-              <span className="muted">{s.source}</span>
-            </div>
-            <div className="chips">
-              {s.instances.map((i) => (
-                <span key={i.id} className="chip">
-                  {i.environmentName}
-                </span>
-              ))}
-            </div>
-          </li>
-        ))}
+        {services.data?.map((s) => {
+          const inEnv = s.instances.find((i) => i.environmentName === environment);
+          return (
+            <li key={s.id} className="card-row">
+              <div>
+                <strong>{s.name}</strong> <span className="pill">{s.kind}</span>{" "}
+                <span className="muted">{s.source}</span>
+              </div>
+              <div className="chips">
+                {s.instances.map((i) => (
+                  <span key={i.id} className="chip">
+                    {i.environmentName}
+                  </span>
+                ))}
+                {inEnv && (
+                  <button
+                    className="ghost small"
+                    onClick={() => setDeploying({ instanceId: inEnv.id, serviceName: s.name, source: s.source })}
+                  >
+                    Deployments
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
         {services.data?.length === 0 && <li className="muted">Nenhum serviço ainda.</li>}
       </ul>
+
+      {deploying && (
+        <DeploymentsPanel
+          key={deploying.instanceId}
+          instanceId={deploying.instanceId}
+          serviceName={deploying.serviceName}
+          environmentName={environment}
+          source={deploying.source}
+          canWrite={canWrite}
+          onClose={() => setDeploying(null)}
+        />
+      )}
     </section>
   );
 }

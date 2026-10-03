@@ -50,3 +50,32 @@ export type Service = {
   instances: { id: string; environmentName: string | null; replicas: number }[];
 };
 export type Connection = { fromInstanceId: string; toInstanceId: string; environmentName: string };
+
+export type DeploymentStatus =
+  | "Queued"
+  | "Building"
+  | "Deploying"
+  | "HealthChecking"
+  | "Running"
+  | "Superseded"
+  | "RolledBack"
+  | "Failed"
+  | "Cancelled";
+
+export const TERMINAL_STATUSES: DeploymentStatus[] = ["Running", "Superseded", "RolledBack", "Failed", "Cancelled"];
+
+export type Deployment = {
+  id: string;
+  serviceInstanceId: string;
+  versionNo: number;
+  status: DeploymentStatus;
+  trigger: string;
+  imageDigest: string | null;
+  commitSha: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DeploymentDetail = Deployment & {
+  events: { fromStatus: DeploymentStatus | null; toStatus: DeploymentStatus; reason: string | null; occurredAt: string }[];
+};

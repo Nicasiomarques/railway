@@ -112,3 +112,20 @@ main { max-width: 880px; margin: 0 auto; padding: 32px 24px; }
   border: 2px solid var(--bg);
   cursor: crosshair;
 }
+
+/* Deployments */
+.deployments { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
+.deployments .row { margin-bottom: 0; }
+.deployments .row.active { border-color: var(--accent); }
+.deployments ul.list li { list-style: none; }
+.timeline { margin-top: 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.timeline ol { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.status { font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); }
+.status-Running { color: #3ddc97; border-color: #3ddc97; }
+.status-Failed { color: var(--danger); border-color: var(--danger); }
+.status-Queued, .status-Building, .status-Deploying, .status-HealthChecking { color: var(--accent); border-color: var(--accent); }
+.status-Superseded, .status-Cancelled, .status-RolledBack { color: var(--muted); }
+.ghost.small { padding: 2px 10px; font-size: 12px; }
+
+.build-logs { margin-top: 12px; }
+.build-logs pre { background: #0b0d12; color: #d8dee9; border: 1px solid var(--border); border-radius: 8px; padding: 12px; max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
