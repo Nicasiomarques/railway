@@ -41,14 +41,14 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               onSignOut();
             }}
           >
-            Sair
+            Sign out
           </button>
         </div>
       </header>
 
       <main>
-        {orgs.isLoading && <p className="muted">Carregando...</p>}
-        {orgs.data && orgs.data.length === 0 && <p className="muted">Nenhuma organização para este token.</p>}
+        {orgs.isLoading && <p className="muted">Loading...</p>}
+        {orgs.data && orgs.data.length === 0 && <p className="muted">No organizations for this token.</p>}
 
         {selectedOrg && !project && <ProjectList org={selectedOrg} onOpen={setProject} />}
         {selectedOrg && project && (

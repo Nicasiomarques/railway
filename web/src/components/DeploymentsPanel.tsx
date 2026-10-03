@@ -5,7 +5,7 @@ import { api, ApiProblem, TERMINAL_STATUSES, type Deployment, type DeploymentDet
 const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^[a-z0-9]+(?:[._/-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/;
 
-// Atualiza enquanto houver deployment em andamento; para quando todos chegam a um estado terminal.
+// Keeps polling while any deployment is in progress; stops once all reach a terminal state.
 function pollInterval(items: Deployment[] | undefined): number | false {
   return items?.some((d) => !TERMINAL_STATUSES.includes(d.status)) ? 3000 : false;
 }
@@ -59,7 +59,7 @@ export function DeploymentsPanel({
     try {
       const created = await api<Deployment>(`/services/${instanceId}/deployments`, {
         method: "POST",
-        // Repetir o clique não cria outra versão: a chave é gerada uma vez por envio.
+        // Clicking again doesn't create another version: the key is generated once per submission.
         headers: { "idempotency-key": crypto.randomUUID() },
         json: isRepo ? { commitSha: origin } : { imageDigest: origin },
       });
@@ -67,7 +67,7 @@ export function DeploymentsPanel({
       setSelectedId(created.id);
       queryClient.invalidateQueries({ queryKey: ["deployments", instanceId] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao criar deployment.");
+      setError(err instanceof ApiProblem ? err.message : "Error creating deployment.");
     }
   }
 
@@ -79,7 +79,7 @@ export function DeploymentsPanel({
           {environmentName && <span className="muted"> · {environmentName}</span>}
         </h3>
         <button className="ghost" onClick={onClose}>
-          Fechar
+          Close
         </button>
       </div>
 
@@ -88,8 +88,8 @@ export function DeploymentsPanel({
           <input
             value={origin}
             onChange={(e) => setOrigin(e.target.value.trim())}
-            placeholder={isRepo ? "SHA completo do commit (40 hex)" : "repo@sha256:<64 hex>"}
-            aria-label={isRepo ? "commit" : "digest da imagem"}
+            placeholder={isRepo ? "Full commit SHA (40 hex)" : "repo@sha256:<64 hex>"}
+            aria-label={isRepo ? "commit" : "image digest"}
           />
           <button type="submit" disabled={!originValid}>
             Deploy
@@ -113,7 +113,7 @@ export function DeploymentsPanel({
             </button>
           </li>
         ))}
-        {list.data?.length === 0 && <li className="muted">Nenhum deployment ainda.</li>}
+        {list.data?.length === 0 && <li className="muted">No deployments yet.</li>}
       </ul>
 
       {selectedId && detail.data && (
@@ -122,7 +122,7 @@ export function DeploymentsPanel({
             v{detail.data.versionNo} · <StatusPill status={detail.data.status} />
           </h4>
           <p className="muted">
-            {detail.data.commitSha ? `commit ${detail.data.commitSha}` : `imagem ${detail.data.imageDigest ?? "—"}`}
+            {detail.data.commitSha ? `commit ${detail.data.commitSha}` : `image ${detail.data.imageDigest ?? "—"}`}
           </p>
           <ol>
             {detail.data.events.map((e, i) => (
@@ -137,12 +137,12 @@ export function DeploymentsPanel({
           {detail.data.commitSha && (
             <div className="build-logs">
               <h4>
-                Logs do build
+                Build logs
                 {logs.data?.updatedAt && (
-                  <span className="muted"> · atualizado {new Date(logs.data.updatedAt).toLocaleTimeString()}</span>
+                  <span className="muted"> · updated {new Date(logs.data.updatedAt).toLocaleTimeString()}</span>
                 )}
               </h4>
-              <pre>{logs.data?.content || "Nenhum log ainda."}</pre>
+              <pre>{logs.data?.content || "No logs yet."}</pre>
             </div>
           )}
         </div>

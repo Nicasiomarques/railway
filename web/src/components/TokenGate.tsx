@@ -16,7 +16,7 @@ export function TokenGate({ onAuthenticated }: { onAuthenticated: () => void }) 
       onAuthenticated();
     } catch {
       tokenStore.clear();
-      setError("Token inválido ou API indisponível.");
+      setError("Invalid token or API unavailable.");
     } finally {
       setLoading(false);
     }
@@ -26,14 +26,14 @@ export function TokenGate({ onAuthenticated }: { onAuthenticated: () => void }) 
     <div className="gate">
       <form className="card" onSubmit={submit}>
         <h1>railway_like</h1>
-        <p className="muted">Cole um token de API. Gere um em dev com <code>pnpm db:seed</code> em <code>api/</code>.</p>
+        <p className="muted">Paste an API token. Generate one in dev with <code>pnpm db:seed</code> in <code>api/</code>.</p>
         <label>
-          Token de API
+          API token
           <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="rl_dev_..." autoFocus />
         </label>
         {error && <p className="error">{error}</p>}
         <button type="submit" disabled={!value.trim() || loading}>
-          {loading ? "Verificando..." : "Entrar"}
+          {loading ? "Verifying..." : "Sign in"}
         </button>
       </form>
     </div>
