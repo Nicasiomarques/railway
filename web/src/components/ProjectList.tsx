@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiProblem, type Organization, type Project } from "../api";
+import { AuditLogPanel } from "./AuditLogPanel";
 
 export function ProjectList({
   org,
@@ -63,6 +64,10 @@ export function ProjectList({
         ))}
         {projects.data?.length === 0 && <li className="muted">No projects yet.</li>}
       </ul>
+
+      {/* Audit logs are organization-wide (api/src/routes/domains.ts and friends write them with an
+          organizationId, not a projectId), so this lives here rather than inside a single project. */}
+      <AuditLogPanel organizationId={org.id} />
     </section>
   );
 }
