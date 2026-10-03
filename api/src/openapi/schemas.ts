@@ -7,6 +7,11 @@ const uuid = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
 const json = z.unknown();
 
+export const LoginResponseSchema = z.object({
+  token: z.string(),
+  userId: uuid,
+});
+
 export const ProblemSchema = z.object({
   type: z.string(),
   title: z.string(),

@@ -1,8 +1,11 @@
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { authenticate } from "./auth.js";
+import type { AuthProvider } from "./auth/provider.js";
+import { LocalAuthProvider } from "./auth/local.js";
 import { ApiError } from "./errors.js";
 import type { Db } from "./db/client.js";
+import { authRoutes } from "./routes/auth.js";
 import { organizationRoutes } from "./routes/organizations.js";
 import { projectRoutes } from "./routes/projects.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -31,9 +34,11 @@ export function buildApp(
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
     githubChecksClient?: GitHubChecksClient;
     runtime?: RuntimeReader;
+    authProvider?: AuthProvider;
   },
 ) {
   const app = Fastify({ logger: opts.logger ?? false });
+  const authProvider = opts.authProvider ?? new LocalAuthProvider(db);
   registerOpenApi(app, { version: "0.1.0" });
   app.register(docsRoutes);
 
@@ -54,6 +59,12 @@ export function buildApp(
     },
     { prefix: "/v1" },
   );
+
+  // Registered outside the authenticated scope above, same reasoning as the GitHub webhook below:
+  // a client has no API token yet when it logs in, so this route can't sit behind the
+  // `authenticate` hook that protects the rest of /v1. Same "/v1" prefix, own encapsulated
+  // instance, so Fastify doesn't propagate v1's onRequest hook to it.
+  app.register(authRoutes, { authProvider, prefix: "/v1" });
 
   // Registered outside the scope above on purpose: the GitHub webhook authenticates via HMAC
   // (X-Hub-Signature-256), not Bearer, so it can't inherit the `authenticate` hook from the
