@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiProblem, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
 import { DeploymentsPanel } from "./DeploymentsPanel";
+import { VariablesPanel } from "./VariablesPanel";
 
 const KINDS = ["web", "worker", "postgres", "redis"] as const;
 const SOURCES = ["github_repo", "image", "template"] as const;
@@ -175,15 +176,18 @@ export function ProjectDetail({
       </ul>
 
       {deploying && (
-        <DeploymentsPanel
-          key={deploying.instanceId}
-          instanceId={deploying.instanceId}
-          serviceName={deploying.serviceName}
-          environmentName={environment}
-          source={deploying.source}
-          canWrite={canWrite}
-          onClose={() => setDeploying(null)}
-        />
+        <>
+          <DeploymentsPanel
+            key={deploying.instanceId}
+            instanceId={deploying.instanceId}
+            serviceName={deploying.serviceName}
+            environmentName={environment}
+            source={deploying.source}
+            canWrite={canWrite}
+            onClose={() => setDeploying(null)}
+          />
+          <VariablesPanel key={`${deploying.instanceId}-vars`} instanceId={deploying.instanceId} canWrite={canWrite} />
+        </>
       )}
     </section>
   );
