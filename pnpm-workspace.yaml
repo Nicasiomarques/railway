@@ -4,3 +4,4 @@ packages:
   - "workers"
   - "cli"
   - "shared"
+  - "db"
