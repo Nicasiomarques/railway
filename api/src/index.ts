@@ -13,6 +13,7 @@ const app = buildApp(db, {
   queue,
   domainQueue,
   baseDomain: process.env.APPS_BASE_DOMAIN,
+  githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
 });
 const port = Number(process.env.PORT ?? 3000);
 

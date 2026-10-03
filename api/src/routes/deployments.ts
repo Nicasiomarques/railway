@@ -17,6 +17,8 @@ import { idempotencyKeyHeader } from "./headers.js";
 const instanceParams = z.object({ instanceId: z.string().uuid() });
 const deploymentParams = z.object({ deploymentId: z.string().uuid() });
 
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 // Exatamente uma das duas origens: imagem pronta por digest, ou commit de um repo que o cluster constrói.
 // Qual é obrigatória depende da origem do serviço, e isso é checado na rota.
 export const createDeploymentBody = z
@@ -44,6 +46,85 @@ const listDeploymentsQuery = z.object({
 const IN_FLIGHT: DeploymentStatus[] = ["Queued", "Building", "Deploying", "HealthChecking"];
 
 type DeploymentRow = typeof deployments.$inferSelect;
+type DeploymentTrigger = DeploymentRow["trigger"];
+
+// Núcleo de criação de deployment (architecture.md §5.2, passos 2-3): versiona, grava o snapshot
+// de env e cancela o que estava em voo na mesma instância. Usado pela rota manual (abaixo) e pelo
+// webhook de push do GitHub (routes/github.ts) — a única diferença entre as duas origens é o
+// trigger e os campos de commit/branch/autor.
+export async function createQueuedDeployment(
+  tx: Tx,
+  keyring: Keyring,
+  input: {
+    instanceId: string;
+    trigger: DeploymentTrigger;
+    imageDigest?: string | null;
+    commitSha?: string | null;
+    branch?: string | null;
+    author?: string | null;
+  },
+): Promise<{ created: DeploymentRow; cancelledIds: string[] }> {
+  const { instanceId } = input;
+
+  // Trava a instância: as versões são sequenciais, e duas criações concorrentes não podem repetir uma.
+  const [locked] = await tx
+    .select({ id: serviceInstances.id })
+    .from(serviceInstances)
+    .where(eq(serviceInstances.id, instanceId))
+    .for("update");
+  if (!locked) throw new ApiError(404, "instance_not_found", "Instância não encontrada.");
+
+  const [{ last }] = await tx
+    .select({ last: sql<number>`coalesce(max(${deployments.versionNo}), 0)::int` })
+    .from(deployments)
+    .where(eq(deployments.serviceInstanceId, instanceId));
+  const versionNo = last + 1;
+
+  // Snapshot imutável: um rollback volta a este conjunto, não ao estado atual das variáveis.
+  const env = await resolveInstanceEnv(tx, keyring, instanceId);
+  const snapshotId = randomUUID();
+  await tx.insert(envSnapshots).values({
+    id: snapshotId,
+    serviceInstanceId: instanceId,
+    payloadEnc: sealEnvSnapshot(keyring, snapshotId, Object.fromEntries(env.map((v) => [v.key, v.value]))),
+  });
+
+  // O novo deployment substitui os que ainda estavam em voo (architecture.md §5.2, passo 3).
+  const inFlight = await tx
+    .select({ id: deployments.id, status: deployments.status })
+    .from(deployments)
+    .where(and(eq(deployments.serviceInstanceId, instanceId), inArray(deployments.status, IN_FLIGHT)));
+  const cancelledIds: string[] = [];
+  for (const old of inFlight) {
+    transition(old.status, "Cancelled");
+    await tx.update(deployments).set({ status: "Cancelled", updatedAt: new Date() }).where(eq(deployments.id, old.id));
+    await tx.insert(deploymentEvents).values({
+      deploymentId: old.id,
+      fromStatus: old.status,
+      toStatus: "Cancelled",
+      reason: `substituído pela versão ${versionNo}`,
+    });
+    cancelledIds.push(old.id);
+  }
+
+  const [created] = await tx
+    .insert(deployments)
+    .values({
+      serviceInstanceId: instanceId,
+      versionNo,
+      status: "Queued",
+      trigger: input.trigger,
+      imageDigest: input.imageDigest ?? null,
+      commitSha: input.commitSha ?? null,
+      branch: input.branch ?? null,
+      author: input.author ?? null,
+      envSnapshotId: snapshotId,
+    })
+    .returning();
+  await tx.insert(deploymentEvents).values({ deploymentId: created.id, fromStatus: null, toStatus: "Queued", reason: "criado" });
+
+  return { created, cancelledIds };
+}
 
 function toResponse(d: DeploymentRow) {
   return {
@@ -104,59 +185,13 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         key: idempotencyKeyHeader(request.headers),
         payload: { instanceId, ...body },
         run: async (tx) => {
-          // Trava a instância: as versões são sequenciais, e duas criações concorrentes não podem repetir uma.
-          const [locked] = await tx
-            .select({ id: serviceInstances.id })
-            .from(serviceInstances)
-            .where(eq(serviceInstances.id, instanceId))
-            .for("update");
-          if (!locked) throw new ApiError(404, "instance_not_found", "Instância não encontrada.");
-
-          const [{ last }] = await tx
-            .select({ last: sql<number>`coalesce(max(${deployments.versionNo}), 0)::int` })
-            .from(deployments)
-            .where(eq(deployments.serviceInstanceId, instanceId));
-          const versionNo = last + 1;
-
-          // Snapshot imutável: um rollback volta a este conjunto, não ao estado atual das variáveis.
-          const env = await resolveInstanceEnv(tx, keyring, instanceId);
-          const snapshotId = randomUUID();
-          await tx.insert(envSnapshots).values({
-            id: snapshotId,
-            serviceInstanceId: instanceId,
-            payloadEnc: sealEnvSnapshot(keyring, snapshotId, Object.fromEntries(env.map((v) => [v.key, v.value]))),
+          const { created, cancelledIds: cancelled } = await createQueuedDeployment(tx, keyring, {
+            instanceId,
+            trigger: "manual",
+            imageDigest: body.imageDigest ?? null,
+            commitSha: body.commitSha ?? null,
           });
-
-          // O novo deployment substitui os que ainda estavam em voo (architecture.md §5.2, passo 3).
-          const inFlight = await tx
-            .select({ id: deployments.id, status: deployments.status })
-            .from(deployments)
-            .where(and(eq(deployments.serviceInstanceId, instanceId), inArray(deployments.status, IN_FLIGHT)));
-          for (const old of inFlight) {
-            transition(old.status, "Cancelled");
-            await tx.update(deployments).set({ status: "Cancelled", updatedAt: new Date() }).where(eq(deployments.id, old.id));
-            await tx.insert(deploymentEvents).values({
-              deploymentId: old.id,
-              fromStatus: old.status,
-              toStatus: "Cancelled",
-              reason: `substituído pela versão ${versionNo}`,
-            });
-            cancelledIds.push(old.id);
-          }
-
-          const [created] = await tx
-            .insert(deployments)
-            .values({
-              serviceInstanceId: instanceId,
-              versionNo,
-              status: "Queued",
-              trigger: "manual",
-              imageDigest: body.imageDigest ?? null,
-              commitSha: body.commitSha ?? null,
-              envSnapshotId: snapshotId,
-            })
-            .returning();
-          await tx.insert(deploymentEvents).values({ deploymentId: created.id, fromStatus: null, toStatus: "Queued", reason: "criado" });
+          cancelledIds.push(...cancelled);
           await tx.insert(auditLogs).values({
             organizationId,
             actorId: userId,

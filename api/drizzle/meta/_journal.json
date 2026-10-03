@@ -43,6 +43,13 @@
       "when": 1791063419888,
       "tag": "0005_environment_provisioning",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791065450438,
+      "tag": "0006_ambitious_the_hand",
+      "breakpoints": true
     }
   ]
 }
