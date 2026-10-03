@@ -66,8 +66,15 @@ function objectProperties(schema: unknown, location: "path" | "query") {
   }));
 }
 
+// A route segment can carry a find-my-way regex constraint, e.g. ":deploymentId([^:]+)", and the
+// literal API-as-verb convention (architecture.md §10, e.g. "/deployments/{id}:rollback") is written
+// in Fastify as ":deploymentId([^:]+)::rollback" — the constraint stops the param from swallowing the
+// literal colon, and the doubled "::" is find-my-way's own escape for a single literal ":" in the URL.
+// The negative lookbehind keeps that escaped "::" from being mistaken for the start of another param
+// (its second colon is never preceded by anything but another colon); the trailing replace then
+// collapses the escape down to the single ":" that actually appears in the real URL.
 function toOpenApiPath(url: string): string {
-  return url.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
+  return url.replace(/(?<!:):([A-Za-z0-9_]+)(?:\([^)]*\))?/g, "{$1}").replace(/::/g, ":");
 }
 
 export function buildOpenApiDocument(routes: CollectedRoute[], version: string) {
