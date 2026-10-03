@@ -133,6 +133,16 @@ export const VariableUpsertSchema = z.object({
   updatedAt: timestamp,
 });
 
+export const DomainSchema = z.object({
+  id: uuid,
+  serviceInstanceId: uuid,
+  hostname: z.string(),
+  type: z.enum(["auto", "custom"]),
+  tlsState: z.string(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
 export const paginated = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ data: z.array(item), nextCursor: z.string().nullable() });
 

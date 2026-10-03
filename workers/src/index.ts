@@ -7,6 +7,9 @@ import { InMemoryRuntime } from "./runtime/in-memory.js";
 import { K8sRuntime } from "./runtime/k8s.js";
 import { K8sBuilder } from "./build/k8s-builder.js";
 import { PostgresEnvironmentStore } from "./provisioning/postgres-store.js";
+import { InMemoryDomainProvider } from "./domain/in-memory.js";
+import { PostgresDomainStore } from "./domain/postgres-store.js";
+import { createDomainWorker } from "./domain/worker.js";
 
 // Escolha explícita do runtime: "k8s" cria workloads no cluster; "memory" só simula.
 // Sem a escolha o processo não sobe, para não parecer operar sem fazer nada.
@@ -60,10 +63,18 @@ const worker = createReconcileWorker(connection, {
       : undefined,
 });
 
+// Domínio/TLS (architecture.md §6 e §8): ainda não existe implementação real de DNS/ACME, então
+// o provider é sempre o simulado, independente do runtime do reconciliador.
+const domainWorker = createDomainWorker(connection, {
+  store: new PostgresDomainStore(db),
+  provider: new InMemoryDomainProvider(),
+});
+
 console.log(`workers iniciados (store Postgres, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
   await worker.close();
+  await domainWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);

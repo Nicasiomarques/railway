@@ -9,13 +9,17 @@ import { environmentRoutes } from "./routes/environments.js";
 import { serviceRoutes } from "./routes/services.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
+import { domainRoutes } from "./routes/domains.js";
 import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
-import type { DeploymentQueue } from "./queue.js";
+import type { DeploymentQueue, DomainQueue } from "./queue.js";
 
-export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue }) {
+export function buildApp(
+  db: Db,
+  opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue; domainQueue?: DomainQueue; baseDomain?: string },
+) {
   const app = Fastify({ logger: opts.logger ?? false });
   registerOpenApi(app, { version: "0.1.0" });
   app.register(docsRoutes);
@@ -32,6 +36,7 @@ export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; que
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
+      await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
       await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue });
     },
     { prefix: "/v1" },
