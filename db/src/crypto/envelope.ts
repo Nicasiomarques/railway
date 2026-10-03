@@ -1,12 +1,12 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
-// Envelope: cada valor é cifrado com uma DEK aleatória; a DEK é cifrada ("embrulhada")
-// por uma KEK identificada por `kid`. Rotacionar = adicionar nova KEK e manter as antigas
-// no keyring até os valores serem re-embrulhados.
+// Envelope: each value is encrypted with a random DEK; the DEK is encrypted ("wrapped")
+// with a KEK identified by `kid`. Rotating = adding a new KEK and keeping the old ones
+// in the keyring until the values are re-wrapped.
 //
-// Formato: v1.<kid>.<wrapIv>.<wrappedDek>.<wrapTag>.<iv>.<ciphertext>.<tag>
-// Todos os segmentos em base64url. `context` é autenticado (AAD): um valor cifrado
-// para uma variável não decifra em outra.
+// Format: v1.<kid>.<wrapIv>.<wrappedDek>.<wrapTag>.<iv>.<ciphertext>.<tag>
+// All segments in base64url. `context` is authenticated (AAD): a value encrypted
+// for one variable won't decrypt for another.
 
 const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12;
@@ -65,7 +65,7 @@ function open(key: Buffer, sealed: Sealed, aad: Buffer): Buffer {
   try {
     return Buffer.concat([decipher.update(sealed.ciphertext), decipher.final()]);
   } catch {
-    // Mensagem genérica: não dizer se foi chave errada, contexto errado ou dado adulterado.
+    // Generic message: don't reveal whether it was the wrong key, wrong context, or tampered data.
     throw new CryptoError("Falha ao decifrar valor.");
   }
 }

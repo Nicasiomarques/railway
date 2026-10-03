@@ -1,22 +1,22 @@
-# Arquitetura
+# Architecture
 
-Plataforma PaaS inspirada na Railway: `Connect → Configure → Deploy → Observe → Scale`.
+PaaS platform inspired by Railway: `Connect → Configure → Deploy → Observe → Scale`.
 
-> Status: rascunho. Decisões marcadas como **[EM ABERTO]** dependem de validação na Fase 0 (ver `roadmap.md`).
-
----
-
-## 1. Princípios
-
-- **Modular monolith + workers**, não microserviços. Módulos com fronteiras claras, prontos para virar serviços depois.
-- **Postgres é a fonte da verdade.** O runtime é apenas estado observado.
-- **Reconciliação, não comandos diretos.** Deploy altera o estado desejado; um reconciliador converge o runtime.
-- **Jobs idempotentes e retomáveis.** Cada etapa grava progresso.
-- **Convention over configuration.** Detecção automática, override sempre disponível.
+> Status: draft. Decisions marked **[OPEN]** depend on validation in Phase 0 (see `roadmap.md`).
 
 ---
 
-## 2. Visão geral
+## 1. Principles
+
+- **Modular monolith + workers**, not microservices. Modules with clear boundaries, ready to become services later.
+- **Postgres is the source of truth.** The runtime is just observed state.
+- **Reconciliation, not direct commands.** Deploy changes the desired state; a reconciler converges the runtime.
+- **Idempotent and resumable jobs.** Every step records progress.
+- **Convention over configuration.** Automatic detection, override always available.
+
+---
+
+## 2. Overview
 
 ```
                  ┌────────────────────────────┐
@@ -25,7 +25,7 @@ Plataforma PaaS inspirada na Railway: `Connect → Configure → Deploy → Obse
                  └──────────────┬─────────────┘
                                 │
                  ┌──────────────▼─────────────┐
-                 │  Core domain (módulos):    │
+                 │  Core domain (modules):    │
                  │  auth · projects · envs ·  │
                  │  services · vars · domains │
                  │  deployments · usage       │
@@ -42,42 +42,42 @@ Plataforma PaaS inspirada na Railway: `Connect → Configure → Deploy → Obse
                                       │             │
                    ┌──────────────────▼──┐   ┌──────▼──────────────────┐
                    │ Build farm          │   │ Runtime adapter         │
-                   │ (BuildKit rootless, │   │ (K8s hoje; interface    │
-                   │  em sandbox)        │   │  permite trocar)        │
+                   │ (BuildKit rootless, │   │ (K8s today; interface   │
+                   │  in sandbox)        │   │  allows swapping)       │
                    └──────────┬──────────┘   └──────┬──────────────────┘
                               │ image digest         │
                    ┌──────────▼──────────┐   ┌──────▼──────────────────┐
                    │ Registry            │   │ Edge (ingress + TLS)    │
-                   └─────────────────────┘   │ Observabilidade         │
+                   └─────────────────────┘   │ Observability           │
                                              └─────────────────────────┘
 ```
 
 ---
 
-## 3. Componentes
+## 3. Components
 
-| Componente | Responsabilidade | Observação |
+| Component | Responsibility | Note |
 |---|---|---|
-| Web | Dashboard, canvas, logs, métricas | SPA (React) |
-| API | Toda a funcionalidade exposta; auth; validação | Mesma API para web, CLI e integrações |
-| Auth | Login, sessões, API tokens, RBAC | Provedor externo no MVP |
-| GitHub integration | Webhooks, checks, tokens de instalação | GitHub App, não OAuth App |
-| Detector | Analisa repo e sugere plano de build/run | Função pura: árvore de arquivos → plano + justificativas |
-| Build orchestrator | Cria jobs de build, cache, timeouts, cancelamento | Cancela builds obsoletos do mesmo serviço |
-| Builder | Executa build em sandbox e publica imagem por digest | BuildKit rootless; Buildpacks para linguagens |
-| Deploy reconciler | Converte deployment em workload | Único componente que escreve no runtime |
-| Runtime adapter | `createWorkload`, `setReplicas`, `getStatus`, `tailLogs` | Abstração para trocar o backend |
-| Edge controller | Roteamento por host, certificados, domínios | Consome o estado de `domains` |
-| Log pipeline | Coleta stdout/stderr, indexa, tail em tempo real | Armazenamento fora do Postgres |
-| Metrics pipeline | CPU, memória, rede, restarts | Agregado por instância |
-| Usage aggregator | Amostras → `usage_events` por projeto/serviço | Alimenta billing futuro |
-| Preview janitor | TTL, sleep e limpeza de previews | Job periódico |
+| Web | Dashboard, canvas, logs, metrics | SPA (React) |
+| API | All exposed functionality; auth; validation | Same API for web, CLI and integrations |
+| Auth | Login, sessions, API tokens, RBAC | External provider in the MVP |
+| GitHub integration | Webhooks, checks, installation tokens | GitHub App, not OAuth App |
+| Detector | Analyzes repo and suggests a build/run plan | Pure function: file tree → plan + justifications |
+| Build orchestrator | Creates build jobs, cache, timeouts, cancellation | Cancels stale builds of the same service |
+| Builder | Runs build in sandbox and publishes image by digest | BuildKit rootless; Buildpacks for languages |
+| Deploy reconciler | Converts deployment into workload | Only component that writes to the runtime |
+| Runtime adapter | `createWorkload`, `setReplicas`, `getStatus`, `tailLogs` | Abstraction for swapping the backend |
+| Edge controller | Routing by host, certificates, domains | Consumes `domains` state |
+| Log pipeline | Collects stdout/stderr, indexes, real-time tail | Storage outside Postgres |
+| Metrics pipeline | CPU, memory, network, restarts | Aggregated per instance |
+| Usage aggregator | Samples → `usage_events` per project/service | Feeds future billing |
+| Preview janitor | TTL, sleep and preview cleanup | Periodic job |
 
 ---
 
-## 4. Modelo de dados
+## 4. Data model
 
-Distinção central: **Service** é a definição; **ServiceInstance** é o serviço dentro de um ambiente, com configs e deployments próprios.
+Central distinction: **Service** is the definition; **ServiceInstance** is the service within an environment, with its own configs and deployments.
 
 ```text
 Organization ─┬─ Membership (user, role)
@@ -100,151 +100,151 @@ Organization ─┬─ Membership (user, role)
                    ├─ Connection (from_instance → to_instance)
                    └─ GitHubRepoLink (installation_id, repo_id, branch→env rules)
 
-Plataforma:
-  Runtime (cluster/região) · UsageEvent · AuditLog · Job · ApiToken
-  EnvSnapshot (conjunto imutável de variáveis no momento do deploy)
+Platform:
+  Runtime (cluster/region) · UsageEvent · AuditLog · Job · ApiToken
+  EnvSnapshot (immutable set of variables at deploy time)
 ```
 
-**Decisões de modelagem**
-- `EnvSnapshot` imutável por deployment: rollback restaura o snapshot, não o estado atual das variáveis.
-- Herança resolvida na ordem serviço-ambiente → ambiente → projeto, gravada no snapshot.
-- `version_no` sequencial por ServiceInstance.
-- Secrets com criptografia de envelope; nunca logados.
-- `usage_events` append-only, agregados em janelas (1 min → hora → dia).
-- Soft delete para projetos e serviços.
+**Modeling decisions**
+- `EnvSnapshot` immutable per deployment: rollback restores the snapshot, not the current state of the variables.
+- Inheritance resolved in the order service-instance → environment → project, recorded in the snapshot.
+- `version_no` sequential per ServiceInstance.
+- Secrets with envelope encryption; never logged.
+- `usage_events` append-only, aggregated in windows (1 min → hour → day).
+- Soft delete for projects and services.
 
 ---
 
-## 5. Fluxo de deployment
+## 5. Deployment flow
 
-### 5.1 Máquina de estados
+### 5.1 State machine
 
 ```
 Queued ──▶ Building ──▶ Deploying ──▶ HealthChecking ──▶ Running ──▶ Superseded
    │           │             │               │                   └──▶ RolledBack
    └───────────┴─────────────┴───────────────┴──▶ Failed
-   Cancelled: a partir de qualquer estado não terminal
+   Cancelled: from any non-terminal state
 ```
 
-`Crashed` é estado do **runtime**, não do deployment.
+`Crashed` is a **runtime** state, not a deployment state.
 
-### 5.2 Passo a passo
+### 5.2 Step by step
 
-1. Webhook `push` → valida `X-Hub-Signature-256` → responde 202 → enfileira (idempotente por `X-GitHub-Delivery`).
-2. Resolve ServiceInstances cujo `branch_rule` casa com a branch e cujo `root_dir` foi afetado pelo diff.
-3. Cria `Deployment(Queued)` com SHA, autor e mensagem; cancela deployments não terminais anteriores da mesma instância.
-4. Cria check run no GitHub (e GitHub Deployment, se houver environment vinculado).
-5. Build: token de instalação de curta duração → clone no SHA exato → detector (se não houver config salva) → build em sandbox → push por digest.
-6. Snapshot: resolve variáveis e referências, grava `EnvSnapshot`.
-7. Deploy: reconciler cria/atualiza workload com `image@digest`, snapshot, limites e health check. Versão anterior segue ativa.
-8. Health check: N sondagens com sucesso dentro do timeout. Falha → mantém anterior; deployment vira `Failed` com motivo legível.
-9. Troca de tráfego no edge; anterior vira `Superseded`, disponível para rollback.
-10. Atualiza check/status no GitHub e dispara notificações.
+1. `push` webhook → validates `X-Hub-Signature-256` → responds 202 → enqueues (idempotent by `X-GitHub-Delivery`).
+2. Resolves ServiceInstances whose `branch_rule` matches the branch and whose `root_dir` was affected by the diff.
+3. Creates `Deployment(Queued)` with SHA, author and message; cancels previous non-terminal deployments of the same instance.
+4. Creates a check run on GitHub (and a GitHub Deployment, if a linked environment exists).
+5. Build: short-lived installation token → clone at the exact SHA → detector (if there is no saved config) → build in sandbox → push by digest.
+6. Snapshot: resolves variables and references, records `EnvSnapshot`.
+7. Deploy: reconciler creates/updates workload with `image@digest`, snapshot, limits and health check. The previous version remains active.
+8. Health check: N successful probes within the timeout. Failure → keeps the previous version; deployment becomes `Failed` with a human-readable reason.
+9. Traffic switch at the edge; previous version becomes `Superseded`, available for rollback.
+10. Updates the check/status on GitHub and fires notifications.
 
-**Rollback:** novo deployment do tipo `rollback` apontando para `image_digest` e `EnvSnapshot` de uma versão anterior. **Não rebuilda.**
+**Rollback:** new deployment of type `rollback` pointing to the `image_digest` and `EnvSnapshot` of a previous version. **Does not rebuild.**
 
-**Redeploy manual:** mesmo SHA/digest com novo snapshot de env (ou rebuild, por escolha explícita).
+**Manual redeploy:** same SHA/digest with a new env snapshot (or rebuild, by explicit choice).
 
 ---
 
-## 6. Provisioning de infraestrutura
+## 6. Infrastructure provisioning
 
-Operações de infra são sagas de passos persistidos e idempotentes.
+Infra operations are sagas of persisted, idempotent steps.
 
 ```text
 CreateEnvironment(prod)
-  1. reservar namespace/identificador lógico   [idempotente por env_id]
-  2. aplicar NetworkPolicy default-deny
-  3. aplicar ResourceQuota e LimitRange
-  4. criar escopo no secret store
-  5. marcar env como READY
+  1. reserve namespace/logical identifier   [idempotent by env_id]
+  2. apply default-deny NetworkPolicy
+  3. apply ResourceQuota and LimitRange
+  4. create scope in the secret store
+  5. mark env as READY
 ```
 
-- Cada passo grava status; retomada do ponto de falha.
-- Todo recurso recebe labels `platform/project`, `platform/env`, `platform/instance`.
-- GC por reconciliação: recursos órfãos são removidos após grace period.
-- Stateful (Postgres/Redis/volumes): PVC + backup agendado (snapshot de volume + dump lógico) no object storage; restore é operação explícita e auditada.
-- Domínio: hostname → DNS (wildcard para subdomínio automático) → certificado → rota no edge. Cada etapa visível ao usuário.
+- Each step records status; resumes from the point of failure.
+- Every resource receives the labels `platform/project`, `platform/env`, `platform/instance`.
+- GC by reconciliation: orphaned resources are removed after a grace period.
+- Stateful (Postgres/Redis/volumes): PVC + scheduled backup (volume snapshot + logical dump) to object storage; restore is an explicit, audited operation.
+- Domain: hostname → DNS (wildcard for automatic subdomain) → certificate → route on the edge. Each step visible to the user.
 
 ---
 
-## 7. Isolamento dos workloads
+## 7. Workload isolation
 
 ### 7.1 Runtime
 
-**Decidido:** k3s atrás de `RuntimeAdapter`. Mantém a API do Kubernetes (namespaces, NetworkPolicy, ResourceQuota) com operação bem menor que um cluster gerenciado.
+**Decided:** k3s behind a `RuntimeAdapter`. Keeps the Kubernetes API (namespaces, NetworkPolicy, ResourceQuota) with much less operational overhead than a managed cluster.
 
-| Opção | Prós | Contras |
+| Option | Pros | Cons |
 |---|---|---|
-| **k3s (escolhida)** | API Kubernetes completa em um binário; sem mudança no modelo de isolamento | Operação própria do cluster |
-| Kubernetes gerenciado | Ecossistema, controle de rede e volumes | Operação pesada |
-| Serverless de containers (Cloud Run / ECS Fargate) | Pouca ops; rápido para web/worker | Stateful e rede privada limitados |
-| Nomad / Docker em VMs / Firecracker próprio | Ops mínima ou isolamento forte | Menos ecossistema ou muito trabalho de plataforma |
+| **k3s (chosen)** | Full Kubernetes API in a single binary; no change to the isolation model | Operating the cluster yourself |
+| Managed Kubernetes | Ecosystem, network and volume control | Heavy operations |
+| Container serverless (Cloud Run / ECS Fargate) | Little ops; fast for web/worker | Limited stateful and private networking |
+| Nomad / Docker on VMs / custom Firecracker | Minimal ops or strong isolation | Smaller ecosystem or lots of platform work |
 
-Isolamento de código não confiável (builds e workloads) continua exigindo gVisor, Kata ou microVM, independentemente do orquestrador. Ver 7.2.
+Isolation of untrusted code (builds and workloads) still requires gVisor, Kata or a microVM, regardless of the orchestrator. See 7.2.
 
-### 7.2 Camadas
+### 7.2 Layers
 
-- **Builds:** nós dedicados; BuildKit rootless sem `privileged`; egress restrito a registries e GitHub; CPU/memória/tempo limitados; idealmente em microVM (Kata/Firecracker).
+- **Builds:** dedicated nodes; BuildKit rootless without `privileged`; egress restricted to registries and GitHub; CPU/memory/time limited; ideally in a microVM (Kata/Firecracker).
 - **Workloads:**
-  - Um namespace **por ambiente** (prod isolado de preview).
-  - NetworkPolicy default-deny; liberação explícita de ingress pelo edge, tráfego entre serviços do mesmo ambiente e egress à internet.
-  - Bloqueio de `169.254.169.254` e redes internas da plataforma.
-  - Pod Security `restricted`; não-root; sem capabilities; seccomp `RuntimeDefault`.
-  - Sandbox de runtime (gVisor ou Kata) para tenants não confiáveis.
-  - `ResourceQuota` por projeto; `requests`/`limits` por serviço.
-- **Secrets:** nunca em ConfigMap; Secret com criptografia em repouso ou External Secrets Operator; rotação dispara novo deployment.
-- **Control plane separado** do plano de dados dos clientes.
+  - One namespace **per environment** (prod isolated from preview).
+  - Default-deny NetworkPolicy; explicit allowance of ingress via the edge, traffic between services in the same environment, and egress to the internet.
+  - Blocking of `169.254.169.254` and the platform's internal networks.
+  - Pod Security `restricted`; non-root; no capabilities; seccomp `RuntimeDefault`.
+  - Runtime sandbox (gVisor or Kata) for untrusted tenants.
+  - `ResourceQuota` per project; `requests`/`limits` per service.
+- **Secrets:** never in a ConfigMap; Secret with encryption at rest or External Secrets Operator; rotation triggers a new deployment.
+- **Control plane separated** from the customers' data plane.
 
 ---
 
 ## 8. GitHub integration
 
-- **GitHub App** (não OAuth App): permissões granulares, tokens de instalação de 1h, rate limit por instalação.
-- Permissões: `contents: read`, `metadata: read`, `pull_requests: read`, `checks: write`, `deployments: write`, `statuses: write`.
-- Eventos: `push`, `pull_request`, `installation`, `installation_repositories`.
-- Login de usuário (identidade) separado da instalação (acesso aos repos).
-- Webhooks: validação HMAC, idempotência por delivery ID, nunca confiar no payload para permissões.
-- **PRs de fork não recebem secrets** e ficam bloqueados por padrão.
-- Tokens de instalação gerados sob demanda, nunca persistidos.
+- **GitHub App** (not OAuth App): granular permissions, 1h installation tokens, rate limit per installation.
+- Permissions: `contents: read`, `metadata: read`, `pull_requests: read`, `checks: write`, `deployments: write`, `statuses: write`.
+- Events: `push`, `pull_request`, `installation`, `installation_repositories`.
+- User login (identity) separate from the installation (access to repos).
+- Webhooks: HMAC validation, idempotency by delivery ID, never trust the payload for permissions.
+- **Fork PRs do not receive secrets** and are blocked by default.
+- Installation tokens generated on demand, never persisted.
 
-**Mapeamento branch → ambiente** (globs ordenadas, configuráveis):
+**Branch → environment mapping** (ordered, configurable globs):
 ```text
 main        → Production
 develop     → Staging
-feature/*   → Preview (fase 2)
+feature/*   → Preview (phase 2)
 ```
 
-**Preview por PR (fase 2):** `opened/synchronize` cria/atualiza `pr-N`; `closed` agenda remoção; comentário único no PR, editado a cada atualização; herda variáveis do Staging com sobrescrita.
+**Preview per PR (phase 2):** `opened/synchronize` creates/updates `pr-N`; `closed` schedules removal; single comment on the PR, edited on each update; inherits Staging variables with override.
 
-**Status:** check runs "Build", "Deploy" e "Health" por deployment, com link para os logs. Commit ↔ deployment vinculados pelo SHA em todas as telas.
+**Status:** "Build", "Deploy" and "Health" check runs per deployment, with a link to the logs. Commit ↔ deployment linked by SHA on every screen.
 
 ---
 
-## 9. Observabilidade
+## 9. Observability
 
 **Logs**
-- Agente por nó (Vector ou Fluent Bit) lê stdout/stderr e adiciona labels `project`, `env`, `instance`, `deployment_id`.
-- Armazenamento: Loki ou VictoriaLogs no MVP; ClickHouse se a busca exigir.
-- Build e runtime no mesmo pipeline, distinguidos por `stream=build|runtime`.
-- Tail via SSE com cursor para reconexão.
-- Retenção por plano; arquivamento em object storage.
+- Per-node agent (Vector or Fluent Bit) reads stdout/stderr and adds labels `project`, `env`, `instance`, `deployment_id`.
+- Storage: Loki or VictoriaLogs in the MVP; ClickHouse if search needs demand it.
+- Build and runtime on the same pipeline, distinguished by `stream=build|runtime`.
+- Tail via SSE with a cursor for reconnection.
+- Retention by plan; archiving to object storage.
 
-**Métricas**
-- CPU, memória, rede e disco do kubelet/cAdvisor (ou equivalente) → Prometheus/VictoriaMetrics.
-- Restarts e uptime derivados de eventos do runtime.
-- Métricas de aplicação via `OTEL_EXPORTER_OTLP_ENDPOINT` injetado como variável.
-- Labels permitidos: `project`, `env`, `instance`. Nunca `commit` ou `deployment_id`.
+**Metrics**
+- CPU, memory, network and disk from kubelet/cAdvisor (or equivalent) → Prometheus/VictoriaMetrics.
+- Restarts and uptime derived from runtime events.
+- Application metrics via `OTEL_EXPORTER_OTLP_ENDPOINT` injected as a variable.
+- Allowed labels: `project`, `env`, `instance`. Never `commit` or `deployment_id`.
 
-**Saúde:** status de deployment (máquina de estados) separado do status de runtime (`running`, `crashlooping`, `sleeping`, `stopped`). Erros passam por um tradutor para linguagem humana com sugestão de ação.
+**Health:** deployment status (state machine) kept separate from runtime status (`running`, `crashlooping`, `sleeping`, `stopped`). Errors go through a translator into human-readable language with a suggested action.
 
-**Plataforma:** traces OpenTelemetry por job; métricas de fila; SLOs de tempo de deploy e de build.
+**Platform:** OpenTelemetry traces per job; queue metrics; deploy-time and build-time SLOs.
 
 ---
 
 ## 10. API
 
-REST com OpenAPI como contrato. CLI e web consomem a mesma API.
+REST with OpenAPI as the contract. CLI and web consume the same API.
 
 ```text
 GET    /v1/projects
@@ -268,14 +268,14 @@ POST   /v1/github/webhooks
 GET    /v1/operations/{id}
 ```
 
-**Convenções**
-- Ações como `:verbo` quando não são CRUD.
-- `Idempotency-Key` em POSTs que criam recursos ou disparam jobs.
-- Operações longas retornam `202` com `operation_id`.
-- Paginação por cursor; erros em RFC 9457 (`problem+json`) com `code` estável.
-- Versionamento por path (`/v1`).
-- API tokens com escopo e expiração.
-- Rate limit por token e por organização.
+**Conventions**
+- Actions as `:verb` when they are not CRUD.
+- `Idempotency-Key` on POSTs that create resources or trigger jobs.
+- Long-running operations return `202` with `operation_id`.
+- Cursor-based pagination; errors in RFC 9457 (`problem+json`) with a stable `code`.
+- Versioning by path (`/v1`).
+- API tokens with scope and expiration.
+- Rate limit per token and per organization.
 
 **CLI:** `login` (device flow), `init`, `deploy`, `logs`, `status`, `rollback`, `env`, `domain`.
 
@@ -287,47 +287,47 @@ GET    /v1/operations/{id}
 Sidebar
 ├── Projects
 │   └── Project
-│       ├── Canvas (visão padrão: serviços e conexões do ambiente)
+│       ├── Canvas (default view: services and connections of the environment)
 │       ├── Environments [switcher: Production | Staging | Preview-N]
 │       ├── Services → Service detail
-│       │     ├── Deployments (commit, autor, status, rollback)
-│       │     ├── Logs (build | runtime, busca, tail)
-│       │     ├── Metrics (CPU, RAM, rede, restarts, uptime)
-│       │     ├── Variables (herança visível, secrets mascarados)
-│       │     ├── Networking (domínios, portas, rede interna)
-│       │     └── Settings (fonte, branch rules, recursos, health check, root dir)
+│       │     ├── Deployments (commit, author, status, rollback)
+│       │     ├── Logs (build | runtime, search, tail)
+│       │     ├── Metrics (CPU, RAM, network, restarts, uptime)
+│       │     ├── Variables (visible inheritance, masked secrets)
+│       │     ├── Networking (domains, ports, internal network)
+│       │     └── Settings (source, branch rules, resources, health check, root dir)
 │       ├── Volumes & Backups
-│       └── Project settings (ambientes, membros, integrações)
-├── New (wizard: Repo → Branch → Detecção → Confirmação → Deploy)
+│       └── Project settings (environments, members, integrations)
+├── New (wizard: Repo → Branch → Detection → Confirmation → Deploy)
 ├── Integrations (GitHub App)
 ├── Team & Access
 ├── Usage & Billing
 └── Audit log
 ```
 
-- Wizard com revisão final do que foi detectado e do que será criado.
-- Configuração progressiva: básico visível, "Avançado" colapsado.
-- Canvas: nós = serviços, arestas = conexões (injetam variáveis). Visualização primeiro; edição depois.
-- Drawer de deployment: commit, diff de variáveis vs. versão anterior, logs e rollback.
+- Wizard with a final review of what was detected and what will be created.
+- Progressive configuration: basics visible, "Advanced" collapsed.
+- Canvas: nodes = services, edges = connections (inject variables). Visualization first; editing later.
+- Deployment drawer: commit, variable diff vs. previous version, logs and rollback.
 
 ---
 
-## 12. Riscos técnicos
+## 12. Technical risks
 
-| # | Risco | Impacto | Mitigação |
+| # | Risk | Impact | Mitigation |
 |---|---|---|---|
-| 1 | Código de build escapando do sandbox | Crítico | microVM para builds, egress restrito, nós dedicados, sem privilégios |
-| 2 | Vazamento de secrets | Crítico | Mascaramento, criptografia de envelope, bloqueio de forks |
-| 3 | Runtime escolhido errado | Alto | `RuntimeAdapter`; spike com A e B |
-| 4 | Custo de egress e logs acima da receita | Alto | Quotas, retenção limitada, usage desde o dia 1, sleep |
-| 5 | Modelo serviço vs instância errado | Alto | `ServiceInstance` desde o início |
-| 6 | Estado desejado divergindo do real | Alto | Reconciliador idempotente; GC de órfãos |
-| 7 | Rate limit de Let's Encrypt/DNS | Médio | Wildcard, reuso de certificados, fila de emissão |
-| 8 | Rate limit do GitHub | Médio | Tokens por instalação, cache, webhooks |
-| 9 | Backup insuficiente de Postgres/Redis | Crítico | Backup automatizado, teste de restore, avisos na UI |
-| 10 | Rollback quebrado por migração ou env | Alto | Snapshot imutável; aviso de migração; pre-deploy command |
-| 11 | Detecção errada | Médio | Justificativa visível, override, corpus de testes |
-| 12 | Abuso (mineração, spam) | Alto | Quotas, verificação de conta, detecção de padrões |
-| 13 | Volume de logs derrubando o pipeline | Alto | Rate limit por instância, sampling em pico |
-| 14 | LGPD e residência de dados | Alto | Região explícita; DPA; mínimo de dados pessoais em logs |
-| 15 | Canvas atrasando o produto | Médio | Visualização primeiro; editor depois |
+| 1 | Build code escaping the sandbox | Critical | microVM for builds, restricted egress, dedicated nodes, no privileges |
+| 2 | Secrets leakage | Critical | Masking, envelope encryption, fork blocking |
+| 3 | Wrong runtime chosen | High | `RuntimeAdapter`; spike with A and B |
+| 4 | Egress and log costs above revenue | High | Quotas, limited retention, usage from day 1, sleep |
+| 5 | Wrong service vs. instance model | High | `ServiceInstance` from the start |
+| 6 | Desired state diverging from actual | High | Idempotent reconciler; orphan GC |
+| 7 | Let's Encrypt/DNS rate limit | Medium | Wildcard, certificate reuse, issuance queue |
+| 8 | GitHub rate limit | Medium | Per-installation tokens, cache, webhooks |
+| 9 | Insufficient Postgres/Redis backup | Critical | Automated backup, restore testing, UI warnings |
+| 10 | Rollback broken by migration or env | High | Immutable snapshot; migration warning; pre-deploy command |
+| 11 | Wrong detection | Medium | Visible justification, override, test corpus |
+| 12 | Abuse (mining, spam) | High | Quotas, account verification, pattern detection |
+| 13 | Log volume overwhelming the pipeline | High | Per-instance rate limit, sampling at peak |
+| 14 | LGPD and data residency | High | Explicit region; DPA; minimal personal data in logs |
+| 15 | Canvas delaying the product | Medium | Visualization first; editor later |

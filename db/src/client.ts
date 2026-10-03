@@ -4,7 +4,7 @@ import * as schema from "./schema.js";
 
 export type Db = NodePgDatabase<typeof schema>;
 
-// Cada app cria o próprio pool: API e workers não compartilham conexões nem estado de módulo.
+// Each app creates its own pool: API and workers don't share connections or module state.
 export function createDb(connectionString = process.env.DATABASE_URL ?? "postgres://railway:railway@localhost:5432/railway_like"): { db: Db; pool: Pool } {
   const pool = new Pool({ connectionString });
   return { db: drizzle({ client: pool, schema }), pool };
