@@ -32,8 +32,8 @@ async function setupProject() {
   return { token, orgId: org.id, projectId: res.json().id as string };
 }
 
-describe("ambientes", () => {
-  it("todo projeto nasce com o ambiente production", async () => {
+describe("environments", () => {
+  it("every project is born with a production environment", async () => {
     const { token, projectId } = await setupProject();
     const res = await app.inject({
       method: "GET",
@@ -45,8 +45,8 @@ describe("ambientes", () => {
   });
 });
 
-describe("serviços", () => {
-  it("cria o serviço com uma instância por ambiente", async () => {
+describe("services", () => {
+  it("creates the service with one instance per environment", async () => {
     const { token, projectId } = await setupProject();
     const res = await app.inject({
       method: "POST",
@@ -64,7 +64,7 @@ describe("serviços", () => {
     expect(svc.instances[0].environmentName).toBe("production");
   });
 
-  it("cria instâncias em todos os ambientes existentes ao criar o serviço", async () => {
+  it("creates instances in every existing environment when the service is created", async () => {
     const { token, projectId } = await setupProject();
     await db.execute(sql`insert into environments (project_id, name, type) values (${projectId}, 'staging', 'staging')`);
 
@@ -79,7 +79,7 @@ describe("serviços", () => {
     expect(names).toEqual(["production", "staging"]);
   });
 
-  it("retorna 409 para nome duplicado no mesmo projeto", async () => {
+  it("returns 409 for a duplicate name in the same project", async () => {
     const { token, projectId } = await setupProject();
     const payload = { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" };
     await app.inject({ method: "POST", url: `/v1/projects/${projectId}/services`, headers: auth(token), payload });
@@ -88,7 +88,7 @@ describe("serviços", () => {
     expect(res.json().code).toBe("name_taken");
   });
 
-  it("rejeita tipo de serviço desconhecido", async () => {
+  it("rejects an unknown service kind", async () => {
     const { token, projectId } = await setupProject();
     const res = await app.inject({
       method: "POST",
@@ -100,7 +100,7 @@ describe("serviços", () => {
     expect(res.json().code).toBe("validation_failed");
   });
 
-  it("impede viewer de criar serviço, mas permite leitura", async () => {
+  it("prevents a viewer from creating a service, but allows reading", async () => {
     const { projectId, orgId } = await setupProject();
     const viewer = await createUserWithToken(db, "viewer");
     await db.insert(memberships).values({ organizationId: orgId, userId: viewer.user.id, role: "viewer" });
@@ -122,7 +122,7 @@ describe("serviços", () => {
     expect(read.statusCode).toBe(200);
   });
 
-  it("retorna 404 para projeto de outra organização", async () => {
+  it("returns 404 for a project in another organization", async () => {
     const { projectId } = await setupProject();
     const outsider = await createUserWithToken(db, "outsider");
     const res = await app.inject({
@@ -134,7 +134,7 @@ describe("serviços", () => {
     expect(res.json().code).toBe("project_not_found");
   });
 
-  it("repetir com a mesma Idempotency-Key não cria outro serviço", async () => {
+  it("repeating with the same Idempotency-Key does not create another service", async () => {
     const { token, projectId } = await setupProject();
     const headers = auth(token, { "idempotency-key": "svc-1" });
     const payload = { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" };

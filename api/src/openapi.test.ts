@@ -24,13 +24,13 @@ const operations = (doc: Doc) =>
     Object.entries(methods).map(([method, op]) => ({ path, method, op })),
   );
 
-describe("contrato OpenAPI", () => {
-  it("é publicado sem token e em OpenAPI 3.1", async () => {
+describe("OpenAPI contract", () => {
+  it("is published without a token and in OpenAPI 3.1", async () => {
     const doc = await loadDoc();
     expect(doc.openapi).toBe("3.1.0");
   });
 
-  it("descreve todas as 19 operações da API v1", async () => {
+  it("describes all 19 operations of the v1 API", async () => {
     const doc = await loadDoc();
     const ops = operations(doc);
     expect(ops).toHaveLength(19);
@@ -59,26 +59,26 @@ describe("contrato OpenAPI", () => {
     );
   });
 
-  it("operationId é único", async () => {
+  it("operationId is unique", async () => {
     const ids = operations(await loadDoc()).map((o) => o.op.operationId);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("toda operação exige bearer e documenta 401", async () => {
+  it("every operation requires bearer and documents 401", async () => {
     for (const { op } of operations(await loadDoc())) {
       expect(op.security).toEqual([{ bearerAuth: [] }]);
       expect(op.responses["401"]).toBeDefined();
     }
   });
 
-  it("corpo vem do schema Zod, com campos obrigatórios", async () => {
+  it("body comes from the Zod schema, with required fields", async () => {
     const doc = await loadDoc();
     const body = doc.paths["/v1/organizations"].post.requestBody.content["application/json"].schema;
     expect(body.required).toContain("name");
     expect(body.properties.name.minLength).toBe(1);
   });
 
-  it("parâmetros de caminho e query saem dos schemas", async () => {
+  it("path and query parameters come from the schemas", async () => {
     const doc = await loadDoc();
     const list = doc.paths["/v1/projects"].get.parameters;
     expect(list).toEqual(
@@ -90,26 +90,26 @@ describe("contrato OpenAPI", () => {
     );
   });
 
-  it("POSTs idempotentes declaram o header Idempotency-Key", async () => {
+  it("idempotent POSTs declare the Idempotency-Key header", async () => {
     const doc = await loadDoc();
     const header = doc.paths["/v1/projects"].post.parameters.find((p: any) => p.name === "Idempotency-Key");
     expect(header).toMatchObject({ in: "header", required: false });
   });
 
-  it("respostas de erro usam problem+json", async () => {
+  it("error responses use problem+json", async () => {
     const doc = await loadDoc();
     const err = doc.paths["/v1/projects"].post.responses["409"];
     expect(err.content["application/problem+json"]).toBeDefined();
   });
 
-  it("DELETE com 204 não tem corpo de resposta", async () => {
+  it("DELETE with 204 has no response body", async () => {
     const doc = await loadDoc();
     expect(doc.paths["/v1/services/{instanceId}/variables/{key}"].delete.responses["204"]).toEqual({
-      description: "Variável removida",
+      description: "Variable removed",
     });
   });
 
-  it("não deixa subir uma rota /v1 sem metadado OpenAPI", async () => {
+  it("does not allow a /v1 route to start without OpenAPI metadata", async () => {
     const bare = Fastify();
     registerOpenApi(bare, { version: "test" });
     bare.get("/v1/sem-metadado", async () => ({}));
@@ -117,15 +117,15 @@ describe("contrato OpenAPI", () => {
   });
 });
 
-describe("documentação Stoplight", () => {
-  it("GET /docs devolve a página do Elements apontando para /openapi.json, sem token", async () => {
+describe("Stoplight documentation", () => {
+  it("GET /docs returns the Elements page pointing to /openapi.json, without a token", async () => {
     const res = await app.inject({ method: "GET", url: "/docs" });
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
     expect(res.body).toContain('<elements-api apiDescriptionUrl="/openapi.json"');
   });
 
-  it("serve o bundle do Elements em /docs/assets", async () => {
+  it("serves the Elements bundle at /docs/assets", async () => {
     const js = await app.inject({ method: "GET", url: "/docs/assets/web-components.min.js" });
     expect(js.statusCode).toBe(200);
     expect(js.headers["content-type"]).toContain("javascript");
@@ -136,7 +136,7 @@ describe("documentação Stoplight", () => {
     expect(css.headers["content-type"]).toContain("text/css");
   });
 
-  it("não expõe outros arquivos do pacote", async () => {
+  it("does not expose other files from the package", async () => {
     for (const file of ["package.json", "../package.json", "index.js"]) {
       const res = await app.inject({ method: "GET", url: `/docs/assets/${file}` });
       expect(res.statusCode).toBe(404);
@@ -144,8 +144,8 @@ describe("documentação Stoplight", () => {
   });
 });
 
-describe("servidor do contrato", () => {
-  it("a URL base é a raiz, porque os paths já trazem /v1", async () => {
+describe("contract server", () => {
+  it("the base URL is the root, because the paths already carry /v1", async () => {
     const doc = await loadDoc();
     expect(doc.servers).toEqual([{ url: "/" }]);
   });

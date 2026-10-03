@@ -11,7 +11,7 @@ import {
   type ReconcileJobData,
 } from "@railway-like/shared";
 
-// Porta de produção da fila: a API só enfileira; quem consome são os workers.
+// Queue production port: the API only enqueues; the workers are the consumers.
 export interface DeploymentQueue {
   enqueueReconcile(data: ReconcileJobData): Promise<void>;
   enqueueCancelBuild(data: CancelBuildJobData): Promise<void>;
@@ -25,7 +25,7 @@ export function createDeploymentQueue(redisUrl: string): DeploymentQueue & { clo
       await queue.add(RECONCILE_JOB, data, { ...RECONCILE_JOB_RETRY, jobId: reconcileJobId(data) });
     },
     async enqueueCancelBuild(data) {
-      // Um cancelamento por deployment: repetir não cria dois.
+      // One cancellation per deployment: retrying doesn't create a second one.
       await queue.add(CANCEL_BUILD_JOB, data, { ...CANCEL_BUILD_JOB_RETRY, jobId: `cancel-build-${data.deploymentId}` });
     },
     async close() {

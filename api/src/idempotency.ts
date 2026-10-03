@@ -9,8 +9,8 @@ export type IdempotentResult = { status: number; body: unknown };
 
 const CONSTRAINT = "idempotency_user_key_idx";
 
-// Executa a operação dentro de uma transação e grava a resposta junto com o recurso.
-// Falhas (ApiError) não são gravadas: o cliente pode repetir com a mesma chave.
+// Runs the operation inside a transaction and stores the response alongside the resource.
+// Failures (ApiError) are not stored: the client can retry with the same key.
 export async function runIdempotent(
   db: Db,
   opts: {
@@ -36,7 +36,7 @@ export async function runIdempotent(
 
   if (existing) {
     if (existing.requestHash !== requestHash) {
-      throw new ApiError(422, "idempotency_key_reused", "Idempotency-Key já usada com outro corpo de requisição.");
+      throw new ApiError(422, "idempotency_key_reused", "Idempotency-Key already used with a different request body.");
     }
     return { status: existing.responseStatus, body: existing.responseBody };
   }
@@ -55,7 +55,7 @@ export async function runIdempotent(
     });
   } catch (err) {
     if (isUniqueViolation(err, CONSTRAINT)) {
-      throw new ApiError(409, "idempotency_conflict", "Requisição com esta Idempotency-Key já está em andamento.");
+      throw new ApiError(409, "idempotency_conflict", "A request with this Idempotency-Key is already in progress.");
     }
     throw err;
   }

@@ -4,25 +4,25 @@ import { decryptValue, type Keyring } from "../crypto/envelope.js";
 import type { Db } from "../db/client.js";
 import { connections, serviceInstances, services, variables } from "../db/schema.js";
 
-// Referência válida: ${{serviço.CHAVE}}. Só resolve para serviços conectados à instância
-// (a origem lê o destino da conexão).
+// Valid reference: ${{service.KEY}}. Only resolves to services connected to the instance
+// (the source reads the connection's target).
 export const REFERENCE_PATTERN = /\$\{\{\s*([a-z0-9]+(?:-[a-z0-9]+)*)\.([A-Z_][A-Z0-9_]*)\s*\}\}/g;
 const STRICT_REFERENCE = /^\$\{\{\s*[a-z0-9]+(?:-[a-z0-9]+)*\.[A-Z_][A-Z0-9_]*\s*\}\}$/;
 const ANY_REFERENCE = /\$\{\{.*?\}\}/g;
 
-// Rejeita ${{ ... }} mal formado já na escrita, para o erro aparecer no PUT e não no deploy.
+// Rejects a malformed ${{ ... }} right at write time, so the error shows up on the PUT and not on deploy.
 export function validateReferences(value: string): void {
   for (const match of value.matchAll(ANY_REFERENCE)) {
     if (!STRICT_REFERENCE.test(match[0])) {
-      throw new ApiError(400, "invalid_reference", `Referência mal formada: ${match[0]}`);
+      throw new ApiError(400, "invalid_reference", `Malformed reference: ${match[0]}`);
     }
   }
 }
 
 export type ResolvedVariable = { key: string; value: string; isSecret: boolean };
 
-// Monta o ambiente final de uma instância: valores próprios com referências substituídas.
-// Uma referência que resolve para secret torna a variável resultante secreta também.
+// Builds an instance's final environment: its own values with references substituted.
+// A reference that resolves to a secret makes the resulting variable secret too.
 export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyring, instanceId: string): Promise<ResolvedVariable[]> {
   const own = await db
     .select()
@@ -43,7 +43,7 @@ export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyrin
 
   const serviceNames = [...new Set([...refs].map((r) => r.split(".")[0]))];
 
-  // Destinos diretamente conectados a esta instância (origem → destino).
+  // Targets directly connected to this instance (source → target).
   const targets = await db
     .select({ instanceId: serviceInstances.id, serviceName: services.name })
     .from(connections)
@@ -66,7 +66,7 @@ export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyrin
         .where(and(eq(variables.scope, "service_instance"), inArray(variables.serviceInstanceId, [...nameOf.keys()])))
     : [];
 
-  // Só descriptografa o que foi referenciado.
+  // Only decrypts what was referenced.
   const lookup = new Map<string, { value: string; isSecret: boolean }>();
   for (const tv of targetVars) {
     const targetId = tv.serviceInstanceId;
@@ -75,7 +75,7 @@ export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyrin
     if (!refs.has(ref)) continue;
     const value = decryptValue(keyring, tv.valueEnc, `variable:${targetId}:${tv.key}`);
     if (value.includes("${{")) {
-      throw new ApiError(422, "reference_not_chained", `${ref} contém uma referência; encadeamento não é suportado.`);
+      throw new ApiError(422, "reference_not_chained", `${ref} contains a reference; chaining is not supported.`);
     }
     lookup.set(ref, { value, isSecret: tv.isSecret });
   }
@@ -88,7 +88,7 @@ export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyrin
         throw new ApiError(
           422,
           "unresolved_reference",
-          `Referência ${svc}.${key} não resolvida: conecte a instância a ${svc} e confirme que a variável ${key} existe.`,
+          `Unresolved reference ${svc}.${key}: connect the instance to ${svc} and confirm that the variable ${key} exists.`,
         );
       }
       if (ref.isSecret) isSecret = true;

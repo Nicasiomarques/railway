@@ -3,7 +3,7 @@ import { loadKeyringFromEnv } from "./crypto/envelope.js";
 import { db } from "./db/client.js";
 import { createDeploymentQueue } from "./queue.js";
 
-if (!process.env.REDIS_URL) throw new Error("REDIS_URL é obrigatória: a API enfileira deployments no Redis.");
+if (!process.env.REDIS_URL) throw new Error("REDIS_URL is required: the API enqueues deployments in Redis.");
 
 const queue = createDeploymentQueue(process.env.REDIS_URL);
 const app = buildApp(db, { keyring: loadKeyringFromEnv(), logger: true, queue });

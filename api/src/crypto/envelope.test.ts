@@ -12,89 +12,89 @@ function keyring(kids: string[], current: string): Keyring {
 }
 
 describe("envelope", () => {
-  it("decifra o que foi cifrado com o mesmo contexto", () => {
+  it("decrypts what was encrypted with the same context", () => {
     const kr = keyring(["k1"], "k1");
     const payload = encryptValue(kr, "postgres://user:senha@host/db", ctx);
     expect(decryptValue(kr, payload, ctx)).toBe("postgres://user:senha@host/db");
   });
 
-  it("não expõe o texto puro no payload", () => {
+  it("does not expose the plain text in the payload", () => {
     const kr = keyring(["k1"], "k1");
-    const payload = encryptValue(kr, "minha-senha-secreta", ctx);
-    expect(payload).not.toContain("minha-senha-secreta");
-    expect(payload).not.toContain(Buffer.from("minha-senha-secreta").toString("base64url"));
+    const payload = encryptValue(kr, "my-secret-password", ctx);
+    expect(payload).not.toContain("my-secret-password");
+    expect(payload).not.toContain(Buffer.from("my-secret-password").toString("base64url"));
   });
 
-  it("usa IV novo a cada cifragem", () => {
+  it("uses a fresh IV on every encryption", () => {
     const kr = keyring(["k1"], "k1");
     expect(encryptValue(kr, "x", ctx)).not.toBe(encryptValue(kr, "x", ctx));
   });
 
-  it("falha se o contexto for diferente (valor copiado para outra variável)", () => {
+  it("fails if the context is different (value copied to another variable)", () => {
     const kr = keyring(["k1"], "k1");
-    const payload = encryptValue(kr, "segredo", ctx);
-    expect(() => decryptValue(kr, payload, "variable:outra:DATABASE_URL")).toThrow(CryptoError);
+    const payload = encryptValue(kr, "secret", ctx);
+    expect(() => decryptValue(kr, payload, "variable:another:DATABASE_URL")).toThrow(CryptoError);
   });
 
-  it("detecta adulteração do ciphertext", () => {
+  it("detects ciphertext tampering", () => {
     const kr = keyring(["k1"], "k1");
-    const parts = encryptValue(kr, "segredo", ctx).split(".");
+    const parts = encryptValue(kr, "secret", ctx).split(".");
     const ct = Buffer.from(parts[6], "base64url");
     ct[0] ^= 0xff;
     parts[6] = ct.toString("base64url");
     expect(() => decryptValue(kr, parts.join("."), ctx)).toThrow(CryptoError);
   });
 
-  it("falha com chave diferente sem revelar detalhes", () => {
-    const payload = encryptValue(keyring(["k1"], "k1"), "segredo", ctx);
-    const outra = { currentKid: "k1", keys: new Map([["k1", randomBytes(32)]]) };
-    expect(() => decryptValue(outra, payload, ctx)).toThrow("Falha ao decifrar valor.");
+  it("fails with a different key without revealing details", () => {
+    const payload = encryptValue(keyring(["k1"], "k1"), "secret", ctx);
+    const another = { currentKid: "k1", keys: new Map([["k1", randomBytes(32)]]) };
+    expect(() => decryptValue(another, payload, ctx)).toThrow("Falha ao decifrar valor.");
   });
 
-  it("decifra valores antigos depois da rotação, desde que a chave antiga esteja no keyring", () => {
-    const antiga = keyring(["k1"], "k1");
-    const payload = encryptValue(antiga, "segredo", ctx);
+  it("decrypts old values after rotation, as long as the old key is still in the keyring", () => {
+    const old = keyring(["k1"], "k1");
+    const payload = encryptValue(old, "secret", ctx);
 
-    const k1 = antiga.keys.get("k1")!;
-    const rotacionado: Keyring = { currentKid: "k2", keys: new Map([["k1", k1], ["k2", randomBytes(32)]]) };
+    const k1 = old.keys.get("k1")!;
+    const rotated: Keyring = { currentKid: "k2", keys: new Map([["k1", k1], ["k2", randomBytes(32)]]) };
 
-    expect(decryptValue(rotacionado, payload, ctx)).toBe("segredo");
-    const novo = encryptValue(rotacionado, "segredo", ctx);
-    expect(novo.split(".")[1]).toBe("k2");
+    expect(decryptValue(rotated, payload, ctx)).toBe("secret");
+    const fresh = encryptValue(rotated, "secret", ctx);
+    expect(fresh.split(".")[1]).toBe("k2");
   });
 
-  it("falha quando o kid do payload não existe no keyring", () => {
-    const payload = encryptValue(keyring(["k1"], "k1"), "segredo", ctx);
+  it("fails when the payload's kid does not exist in the keyring", () => {
+    const payload = encryptValue(keyring(["k1"], "k1"), "secret", ctx);
     expect(() => decryptValue(keyring(["k9"], "k9"), payload, ctx)).toThrow("Chave k1 não está disponível");
   });
 
-  it("rejeita payload com formato inválido", () => {
-    expect(() => decryptValue(keyring(["k1"], "k1"), "texto-puro", ctx)).toThrow("Formato");
+  it("rejects a payload with an invalid format", () => {
+    expect(() => decryptValue(keyring(["k1"], "k1"), "plain-text", ctx)).toThrow("Formato");
   });
 });
 
 describe("loadKeyringFromEnv", () => {
   const key = randomBytes(32).toString("base64");
 
-  it("carrega chaves e a chave atual", () => {
+  it("loads the keys and the current key", () => {
     const kr = loadKeyringFromEnv({ ENCRYPTION_KEYS: `k1:${key}`, ENCRYPTION_CURRENT_KID: "k1" } as NodeJS.ProcessEnv);
     expect(kr.currentKid).toBe("k1");
     expect(kr.keys.get("k1")!.length).toBe(32);
   });
 
-  it("rejeita chave com tamanho errado", () => {
+  it("rejects a key with the wrong size", () => {
     expect(() =>
       loadKeyringFromEnv({ ENCRYPTION_KEYS: `k1:${randomBytes(16).toString("base64")}`, ENCRYPTION_CURRENT_KID: "k1" } as NodeJS.ProcessEnv),
     ).toThrow("32 bytes");
   });
 
-  it("rejeita kid atual ausente", () => {
+  it("rejects a missing current kid", () => {
     expect(() =>
       loadKeyringFromEnv({ ENCRYPTION_KEYS: `k1:${key}`, ENCRYPTION_CURRENT_KID: "k2" } as NodeJS.ProcessEnv),
     ).toThrow("não existe");
   });
 
-  it("rejeita ambiente sem configuração", () => {
+  it("rejects an environment with no configuration", () => {
     expect(() => loadKeyringFromEnv({} as NodeJS.ProcessEnv)).toThrow("obrigatórios");
   });
 });

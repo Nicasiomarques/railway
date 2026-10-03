@@ -3,10 +3,10 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 import { ZodType } from "zod";
 import { ProblemSchema } from "./schemas.js";
 
-// Metadado de documentação por rota. Vive ao lado de cada `app.<método>(...)`, em `config.openapi`.
-// Método e caminho vêm do próprio Fastify, então não há como o contrato divergir das rotas.
-// Os schemas são `unknown` aqui: tipá-los como ZodType quebra a inferência do `config` da rota.
-// toJsonSchema valida em runtime que cada um é um schema Zod.
+// Per-route documentation metadata. Lives next to each `app.<method>(...)`, in `config.openapi`.
+// Method and path come from Fastify itself, so the contract can never drift from the routes.
+// The schemas are `unknown` here: typing them as ZodType breaks the route's `config` inference.
+// toJsonSchema validates at runtime that each one is actually a Zod schema.
 export interface OperationMeta {
   operationId: string;
   tags: string[];
@@ -14,10 +14,10 @@ export interface OperationMeta {
   pathSchema?: unknown;
   querySchema?: unknown;
   bodySchema?: unknown;
-  // Header Idempotency-Key opcional (POSTs que criam recursos ou disparam jobs).
+  // Optional Idempotency-Key header (POSTs that create resources or trigger jobs).
   idempotent?: boolean;
   success: { status: number; description: string; schema?: unknown };
-  // Códigos de erro que a operação pode devolver além de 401 (todas exigem token).
+  // Error codes the operation can return besides 401 (all of them require a token).
   errors?: number[];
 }
 
@@ -28,12 +28,12 @@ declare module "fastify" {
 }
 
 const ERROR_DESCRIPTIONS: Record<number, string> = {
-  400: "Entrada inválida",
-  401: "Token ausente ou inválido",
-  403: "Sem permissão para esta ação",
-  404: "Recurso não encontrado",
-  409: "Conflito com o estado atual",
-  422: "Regra de negócio violada",
+  400: "Invalid input",
+  401: "Missing or invalid token",
+  403: "Not allowed to perform this action",
+  404: "Resource not found",
+  409: "Conflict with the current state",
+  422: "Business rule violated",
 };
 
 interface CollectedRoute {
@@ -44,9 +44,9 @@ interface CollectedRoute {
 
 const API_PREFIX = "/v1";
 
-// Converte o schema Zod em JSON Schema inline (sem $ref), para o documento ser autocontido.
+// Converts the Zod schema into an inline JSON Schema (no $ref), so the document is self-contained.
 function toJsonSchema(schema: unknown): Record<string, unknown> {
-  if (!(schema instanceof ZodType)) throw new Error("Metadado OpenAPI espera um schema Zod");
+  if (!(schema instanceof ZodType)) throw new Error("OpenAPI metadata expects a Zod schema");
   const { $schema: _ignored, ...json } = zodToJsonSchema(schema, {
     target: "jsonSchema7",
     $refStrategy: "none",
@@ -82,7 +82,7 @@ export function buildOpenApiDocument(routes: CollectedRoute[], version: string) 
         name: "Idempotency-Key",
         in: "header",
         required: false,
-        description: "Chave para repetir a operação sem efeito duplicado (1 a 255 caracteres).",
+        description: "Key to retry the operation without a duplicate effect (1 to 255 characters).",
         schema: { type: "string", minLength: 1, maxLength: 255 },
       });
     }
@@ -99,7 +99,7 @@ export function buildOpenApiDocument(routes: CollectedRoute[], version: string) 
     const errorStatuses = new Set([401, ...(hasInput ? [400] : []), ...(meta.errors ?? [])]);
     for (const status of errorStatuses) {
       responses[status] = {
-        description: ERROR_DESCRIPTIONS[status] ?? "Erro",
+        description: ERROR_DESCRIPTIONS[status] ?? "Error",
         content: { "application/problem+json": { schema: toJsonSchema(ProblemSchema) } },
       };
     }
@@ -125,23 +125,23 @@ export function buildOpenApiDocument(routes: CollectedRoute[], version: string) 
   return {
     openapi: "3.1.0",
     info: { title: "Railway-like API", version },
-    // Os paths já trazem o prefixo /v1; o servidor é a raiz, senão clientes gerados chamariam /v1/v1/...
+    // The paths already carry the /v1 prefix; the server is the root, otherwise generated clients would call /v1/v1/...
     servers: [{ url: "/" }],
     components: {
       securitySchemes: {
-        bearerAuth: { type: "http", scheme: "bearer", description: "Token de API com escopo e expiração." },
+        bearerAuth: { type: "http", scheme: "bearer", description: "API token with scope and expiration." },
       },
     },
     paths,
   };
 }
 
-// Coleta as rotas /v1 à medida que são registradas, valida que todas têm metadado e publica o contrato em /openapi.json.
+// Collects the /v1 routes as they are registered, validates that all of them have metadata, and publishes the contract at /openapi.json.
 export function registerOpenApi(app: FastifyInstance, opts: { version: string }): void {
   const routes: CollectedRoute[] = [];
   let document: ReturnType<typeof buildOpenApiDocument> | undefined;
 
-  // Precisa ser registrado antes das rotas: hooks de onRoute no root valem para os escopos filhos.
+  // Must be registered before the routes: onRoute hooks on the root apply to the child scopes.
   app.addHook("onRoute", (route) => {
     if (route.method === "HEAD" || !route.url.startsWith(API_PREFIX)) return;
     routes.push({ method: String(route.method), url: route.url, meta: route.config?.openapi });
@@ -150,7 +150,7 @@ export function registerOpenApi(app: FastifyInstance, opts: { version: string })
   app.addHook("onReady", async () => {
     const missing = routes.filter((r) => !r.meta).map((r) => `${r.method} ${r.url}`);
     if (missing.length > 0) {
-      throw new Error(`Rotas sem metadado OpenAPI (config.openapi): ${missing.join(", ")}`);
+      throw new Error(`Routes missing OpenAPI metadata (config.openapi): ${missing.join(", ")}`);
     }
     document = buildOpenApiDocument(routes, opts.version);
   });

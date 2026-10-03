@@ -22,7 +22,7 @@ afterAll(async () => {
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
-// Cria projeto com serviços `api` e `postgres`; retorna os ids de instância.
+// Creates a project with `api` and `postgres` services; returns the instance ids.
 async function setup() {
   const { token, org } = await createUserWithToken(db);
   const project = (
@@ -59,18 +59,18 @@ const connect = (token: string, projectId: string, from: string, to: string) =>
     payload: { fromInstanceId: from, toInstanceId: to },
   });
 
-describe("referências entre serviços", () => {
-  it("api lê DATABASE_URL do postgres pela conexão e o resultado vira secret", async () => {
+describe("references between services", () => {
+  it("api reads DATABASE_URL from postgres via the connection and the result becomes a secret", async () => {
     const { token, projectId, api, pg } = await setup();
-    await put(token, pg, "DATABASE_URL", "postgres://u:senha@pg:5432/app", true);
+    await put(token, pg, "DATABASE_URL", "postgres://u:password@pg:5432/app", true);
     await put(token, api, "DATABASE_URL", "${{postgres.DATABASE_URL}}");
     await connect(token, projectId, api, pg);
 
     const env = await resolveInstanceEnv(db, keyring, api);
-    expect(env).toEqual([{ key: "DATABASE_URL", value: "postgres://u:senha@pg:5432/app", isSecret: true }]);
+    expect(env).toEqual([{ key: "DATABASE_URL", value: "postgres://u:password@pg:5432/app", isSecret: true }]);
   });
 
-  it("sem conexão, a referência não resolve", async () => {
+  it("without a connection, the reference does not resolve", async () => {
     const { token, api, pg } = await setup();
     await put(token, pg, "DATABASE_URL", "postgres://x");
     await put(token, api, "DATABASE_URL", "${{postgres.DATABASE_URL}}");
@@ -78,7 +78,7 @@ describe("referências entre serviços", () => {
     await expect(resolveInstanceEnv(db, keyring, api)).rejects.toMatchObject({ code: "unresolved_reference" });
   });
 
-  it("a conexão tem sentido: o postgres não enxerga variáveis da api", async () => {
+  it("the connection is directional: postgres cannot see api's variables", async () => {
     const { token, projectId, api, pg } = await setup();
     await put(token, api, "SECRET_TOKEN", "abc", true);
     await put(token, pg, "DATABASE_URL", "${{api.SECRET_TOKEN}}");
@@ -87,7 +87,7 @@ describe("referências entre serviços", () => {
     await expect(resolveInstanceEnv(db, keyring, pg)).rejects.toMatchObject({ code: "unresolved_reference" });
   });
 
-  it("falha quando a chave referenciada não existe no destino", async () => {
+  it("fails when the referenced key does not exist on the target", async () => {
     const { token, projectId, api, pg } = await setup();
     await put(token, pg, "OTHER", "x");
     await put(token, api, "DATABASE_URL", "${{postgres.DATABASE_URL}}");
@@ -96,7 +96,7 @@ describe("referências entre serviços", () => {
     await expect(resolveInstanceEnv(db, keyring, api)).rejects.toMatchObject({ code: "unresolved_reference" });
   });
 
-  it("rejeita encadeamento de referências", async () => {
+  it("rejects chained references", async () => {
     const { token, projectId, api, pg } = await setup();
     await put(token, pg, "DATABASE_URL", "${{api.X}}");
     await put(token, api, "DATABASE_URL", "${{postgres.DATABASE_URL}}");
@@ -105,22 +105,22 @@ describe("referências entre serviços", () => {
     await expect(resolveInstanceEnv(db, keyring, api)).rejects.toMatchObject({ code: "reference_not_chained" });
   });
 
-  it("valores sem referência passam sem alteração", async () => {
+  it("values without a reference pass through unchanged", async () => {
     const { token, api } = await setup();
     await put(token, api, "PORT", "3000");
     expect(await resolveInstanceEnv(db, keyring, api)).toEqual([{ key: "PORT", value: "3000", isSecret: false }]);
   });
 
-  it("rejeita referência mal formada já no PUT", async () => {
+  it("rejects a malformed reference already at PUT time", async () => {
     const { token, api } = await setup();
     const res = await put(token, api, "DATABASE_URL", "${{postgres}}");
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("invalid_reference");
   });
 
-  it("GET /env devolve o ambiente resolvido com secrets mascarados", async () => {
+  it("GET /env returns the resolved environment with secrets masked", async () => {
     const { token, projectId, api, pg } = await setup();
-    await put(token, pg, "DATABASE_URL", "postgres://u:senha@pg/app", true);
+    await put(token, pg, "DATABASE_URL", "postgres://u:password@pg/app", true);
     await put(token, api, "DATABASE_URL", "${{postgres.DATABASE_URL}}");
     await put(token, api, "PORT", "3000");
     await connect(token, projectId, api, pg);
@@ -133,6 +133,6 @@ describe("referências entre serviços", () => {
         { key: "PORT", isSecret: false, value: "3000" },
       ]),
     );
-    expect(JSON.stringify(res.json())).not.toContain("senha");
+    expect(JSON.stringify(res.json())).not.toContain("password");
   });
 });

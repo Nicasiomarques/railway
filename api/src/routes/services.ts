@@ -17,45 +17,45 @@ export const createServiceBody = z
       .string()
       .min(1)
       .max(63)
-      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use letras minúsculas, números e hífens"),
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use lowercase letters, numbers and hyphens"),
     kind: z.enum(["web", "worker", "postgres", "redis"]),
     source: z.enum(["github_repo", "image", "template"]),
     rootDir: z
       .string()
       .startsWith("/")
       .max(255)
-      .refine((p) => !p.split("/").includes(".."), "rootDir não pode conter ..")
+      .refine((p) => !p.split("/").includes(".."), "rootDir cannot contain ..")
       .default("/"),
-    // URL do clone, só para github_repo. http(s) apenas: o build roda no cluster e não aceita outros protocolos.
+    // Clone URL, only for github_repo. http(s) only: the build runs in the cluster and doesn't accept other protocols.
     repoUrl: z
       .string()
       .max(500)
-      .regex(/^https?:\/\/\S+$/, "use uma URL http(s)")
+      .regex(/^https?:\/\/\S+$/, "use an http(s) URL")
       .optional(),
   })
   .superRefine((body, ctx) => {
     if (body.source === "github_repo" && !body.repoUrl) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl é obrigatória para github_repo" });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl is required for github_repo" });
     }
     if (body.source !== "github_repo" && body.repoUrl) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl só existe para github_repo" });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl only exists for github_repo" });
     }
   });
 
 export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
-  // Cria o serviço e uma instância em cada ambiente do projeto, na mesma transação.
+  // Creates the service and one instance in each of the project's environments, in the same transaction.
   app.post(
     "/projects/:projectId/services",
     {
       config: {
         openapi: {
           operationId: "createService",
-          tags: ["Serviços"],
-          summary: "Cria um serviço e uma instância em cada ambiente do projeto",
+          tags: ["Services"],
+          summary: "Creates a service and one instance in each of the project's environments",
           pathSchema: projectParams,
           bodySchema: createServiceBody,
           idempotent: true,
-          success: { status: 201, description: "Serviço criado", schema: ServiceWithInstancesSchema },
+          success: { status: 201, description: "Service created", schema: ServiceWithInstancesSchema },
           errors: [403, 404, 409],
         },
       },
@@ -76,7 +76,7 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
           .from(services)
           .where(and(eq(services.projectId, projectId), eq(services.name, body.name), isNull(services.deletedAt)))
           .limit(1);
-        if (taken) throw new ApiError(409, "name_taken", `Já existe um serviço chamado "${body.name}".`);
+        if (taken) throw new ApiError(409, "name_taken", `A service named "${body.name}" already exists.`);
 
         const [service] = await tx.insert(services).values({ projectId, ...body }).returning();
 
@@ -110,10 +110,10 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       config: {
         openapi: {
           operationId: "listServices",
-          tags: ["Serviços"],
-          summary: "Lista os serviços do projeto com suas instâncias por ambiente",
+          tags: ["Services"],
+          summary: "Lists the project's services with their instances per environment",
           pathSchema: projectParams,
-          success: { status: 200, description: "Serviços", schema: listOf(ServiceListItemSchema) },
+          success: { status: 200, description: "Services", schema: listOf(ServiceListItemSchema) },
           errors: [404],
         },
       },
@@ -134,7 +134,7 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       .where(and(eq(services.projectId, projectId), isNull(services.deletedAt)))
       .orderBy(asc(services.createdAt), asc(services.id));
 
-    // Agrupa as linhas do join (uma por instância) em um serviço com a lista de instâncias.
+    // Groups the join rows (one per instance) into a service with its list of instances.
     const byService = new Map<string, { service: typeof services.$inferSelect; instances: unknown[] }>();
     for (const row of rows) {
       const entry = byService.get(row.service.id) ?? { service: row.service, instances: [] };

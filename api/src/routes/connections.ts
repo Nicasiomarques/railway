@@ -19,8 +19,8 @@ export const deleteConnectionQuery = z.object({
   toInstanceId: z.string().uuid(),
 });
 
-// Conexões são internas ao ambiente (architecture.md §8): as duas pontas precisam
-// pertencer ao projeto e ao mesmo ambiente.
+// Connections are internal to the environment (architecture.md §8): both ends need
+// to belong to the project and to the same environment.
 export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   app.post(
     "/projects/:projectId/connections",
@@ -28,11 +28,11 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
       config: {
         openapi: {
           operationId: "createConnection",
-          tags: ["Conexões"],
-          summary: "Conecta duas instâncias do mesmo ambiente",
+          tags: ["Connections"],
+          summary: "Connects two instances in the same environment",
           pathSchema: projectParams,
           bodySchema: createConnectionBody,
-          success: { status: 201, description: "Conexão criada", schema: ConnectionSchema },
+          success: { status: 201, description: "Connection created", schema: ConnectionSchema },
           errors: [403, 404],
         },
       },
@@ -44,7 +44,7 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
     const { organizationId } = await requireProjectAccess(db, userId, projectId, { write: true });
 
     if (body.fromInstanceId === body.toInstanceId) {
-      throw new ApiError(400, "invalid_connection", "Um serviço não pode se conectar a si mesmo.");
+      throw new ApiError(400, "invalid_connection", "A service cannot connect to itself.");
     }
 
     const found = await db
@@ -68,10 +68,10 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
     const from = found.find((r) => r.instanceId === body.fromInstanceId);
     const to = found.find((r) => r.instanceId === body.toInstanceId);
     if (!from || !to || from.projectId !== projectId || to.projectId !== projectId) {
-      throw new ApiError(404, "instance_not_found", "Instância não encontrada neste projeto.");
+      throw new ApiError(404, "instance_not_found", "Instance not found in this project.");
     }
     if (from.environmentId !== to.environmentId) {
-      throw new ApiError(400, "invalid_connection", "As instâncias precisam estar no mesmo ambiente.");
+      throw new ApiError(400, "invalid_connection", "The instances must be in the same environment.");
     }
 
     const [row] = await db
@@ -102,10 +102,10 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
       config: {
         openapi: {
           operationId: "listConnections",
-          tags: ["Conexões"],
-          summary: "Lista as conexões do projeto",
+          tags: ["Connections"],
+          summary: "Lists the project's connections",
           pathSchema: projectParams,
-          success: { status: 200, description: "Conexões", schema: listOf(ConnectionListItemSchema) },
+          success: { status: 200, description: "Connections", schema: listOf(ConnectionListItemSchema) },
           errors: [404],
         },
       },
@@ -137,11 +137,11 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
       config: {
         openapi: {
           operationId: "deleteConnection",
-          tags: ["Conexões"],
-          summary: "Remove uma conexão entre duas instâncias",
+          tags: ["Connections"],
+          summary: "Removes a connection between two instances",
           pathSchema: projectParams,
           querySchema: deleteConnectionQuery,
-          success: { status: 204, description: "Conexão removida" },
+          success: { status: 204, description: "Connection removed" },
           errors: [403, 404],
         },
       },
@@ -158,7 +158,7 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
         and(
           eq(connections.fromInstanceId, query.fromInstanceId),
           eq(connections.toInstanceId, query.toInstanceId),
-          // A conexão precisa pertencer a este projeto, mesmo que o id venha de outro.
+          // The connection must belong to this project, even if the id came from another one.
           inArray(
             connections.fromInstanceId,
             db
@@ -171,7 +171,7 @@ export const connectionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db
       )
       .returning();
 
-    if (!deleted) throw new ApiError(404, "connection_not_found", "Conexão não encontrada.");
+    if (!deleted) throw new ApiError(404, "connection_not_found", "Connection not found.");
 
     await db.insert(auditLogs).values({
       organizationId,
