@@ -29,3 +29,32 @@ describe("InMemoryRuntime", () => {
     expect(await new InMemoryRuntime().getStatus({ name: "nope", namespace: "env-ns" })).toBeNull();
   });
 });
+
+describe("tailLogs", () => {
+  async function collect(iter: AsyncIterable<string>): Promise<string[]> {
+    const lines: string[] = [];
+    for await (const line of iter) lines.push(line);
+    return lines;
+  }
+
+  it("devolve as linhas populadas por seedLogs, na ordem", async () => {
+    const runtime = new InMemoryRuntime();
+    await runtime.applyWorkload(spec);
+    runtime.seedLogs("wl-1", ["linha 1", "linha 2"]);
+
+    expect(await collect(runtime.tailLogs(REF))).toEqual(["linha 1", "linha 2"]);
+  });
+
+  it("sem buffer populado, gera uma linha determinística se o workload existir", async () => {
+    const runtime = new InMemoryRuntime();
+    await runtime.applyWorkload(spec);
+
+    expect(await collect(runtime.tailLogs(REF))).toEqual(["[sim] wl-1: workload em execução"]);
+  });
+
+  it("workload inexistente não gera nenhuma linha", async () => {
+    const runtime = new InMemoryRuntime();
+
+    expect(await collect(runtime.tailLogs({ name: "nope", namespace: "env-ns" }))).toEqual([]);
+  });
+});

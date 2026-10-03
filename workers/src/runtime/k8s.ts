@@ -1,3 +1,4 @@
+import { PassThrough } from "node:stream";
 import * as k8s from "@kubernetes/client-node";
 import { specHash, type RuntimeAdapter, type WorkloadRef, type WorkloadSpec, type WorkloadStatus } from "./adapter.js";
 import {
@@ -22,11 +23,13 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
   private readonly core: k8s.CoreV1Api;
   private readonly apps: k8s.AppsV1Api;
   private readonly net: k8s.NetworkingV1Api;
+  private readonly logClient: k8s.Log;
 
   constructor(kubeconfig: k8s.KubeConfig) {
     this.core = kubeconfig.makeApiClient(k8s.CoreV1Api);
     this.apps = kubeconfig.makeApiClient(k8s.AppsV1Api);
     this.net = kubeconfig.makeApiClient(k8s.NetworkingV1Api);
+    this.logClient = new k8s.Log(kubeconfig);
   }
 
   // Sem contexto, usa o contexto atual do kubeconfig.
@@ -107,6 +110,37 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
       replicas: deployment.spec?.replicas ?? 1,
       readyReplicas: pods.items.filter(isPodReady).length,
     };
+  }
+
+  // Tail direto do pod via `kubectl logs`-equivalente (follow: true); sem pipeline Loki/Vector no MVP
+  // (architecture.md §9). Sem réplica para ler, não há nada a fazer: encerra sem linhas.
+  async *tailLogs({ name, namespace }: WorkloadRef, opts: { since?: string } = {}): AsyncIterable<string> {
+    const pods = await this.core.listNamespacedPod({ namespace, labelSelector: `${LABEL_WORKLOAD}=${name}` });
+    // Prioriza um pod pronto; na ausência de um, o primeiro disponível (pode estar crashando, e aí os logs
+    // são exatamente o que se quer ver).
+    const pod = pods.items.find(isPodReady) ?? pods.items[0];
+    const podName = pod?.metadata?.name;
+    if (!podName) return;
+    const container = pod.spec?.containers[0]?.name ?? "app";
+
+    const stream = new PassThrough();
+    const controller = await this.logClient.log(namespace, podName, container, stream, {
+      follow: true,
+      ...(opts.since ? { sinceTime: opts.since } : {}),
+    });
+    try {
+      // O stream chega em pedaços arbitrários; reparte em linhas e guarda o resto incompleto para o próximo pedaço.
+      let pending = "";
+      for await (const chunk of stream) {
+        pending += (chunk as Buffer).toString("utf8");
+        const lines = pending.split("\n");
+        pending = lines.pop() ?? "";
+        for (const line of lines) yield line;
+      }
+      if (pending.length > 0) yield pending;
+    } finally {
+      controller.abort();
+    }
   }
 }
 

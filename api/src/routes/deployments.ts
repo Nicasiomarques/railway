@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { type DeploymentStatus, transition } from "@railway-like/shared";
@@ -11,11 +11,73 @@ import { resolveInstanceEnv } from "../env/resolve.js";
 import type { DeploymentQueue } from "../queue.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, buildLogs, deploymentEvents, deployments, envSnapshots, serviceInstances, services } from "../db/schema.js";
-import { BuildLogSchema, DeploymentDetailSchema, DeploymentSchema, listOf } from "../openapi/schemas.js";
+import { BuildLogSchema, DeploymentDetailSchema, DeploymentSchema, MetricsSnapshotSchema, listOf } from "../openapi/schemas.js";
+import { namespaceFor, workloadName, type RuntimeReader } from "../runtime.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
 const instanceParams = z.object({ instanceId: z.string().uuid() });
 const deploymentParams = z.object({ deploymentId: z.string().uuid() });
+
+// Sem `stream`: snapshot JSON do build (compatível com o comportamento anterior desta rota).
+// `stream=build|runtime`: a mesma rota passa a responder por SSE (architecture.md §9, §10).
+const deploymentLogsQuery = z.object({
+  stream: z.enum(["build", "runtime"]).optional(),
+  // Só vale para `stream=runtime`: timestamp RFC3339 a partir de quando mostrar logs do runtime.
+  since: z.string().optional(),
+});
+
+const metricsQuery = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  metric: z.string().optional(),
+});
+
+// Builds em andamento: enquanto o deployment estiver num destes estados, o tail de build continua reabrindo.
+const BUILD_IN_PROGRESS: DeploymentStatus[] = ["Queued", "Building"];
+const BUILD_LOG_POLL_MS = 500;
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => resolve(), { once: true });
+    // Não deixa o timer vivo sozinho atrasar o fim do processo em testes.
+    (timer as { unref?: () => void }).unref?.();
+  });
+}
+
+// Tail do retrato de `build_logs`, salvo pelo reconciliador (ver captureBuildLogs em workers/reconciler).
+// Sem append real: faz polling do mesmo registro e manda só as linhas novas; fecha quando o build termina.
+async function* tailBuildLog(db: Db, deploymentId: string, signal: AbortSignal): AsyncIterable<string> {
+  let sent = 0;
+  while (!signal.aborted) {
+    const [row] = await db.select({ content: buildLogs.content }).from(buildLogs).where(eq(buildLogs.deploymentId, deploymentId));
+    const lines = row?.content ? row.content.split("\n") : [];
+    for (; sent < lines.length && !signal.aborted; sent++) yield lines[sent];
+
+    const [dep] = await db.select({ status: deployments.status }).from(deployments).where(eq(deployments.id, deploymentId));
+    if (!dep || !BUILD_IN_PROGRESS.includes(dep.status)) return;
+    await sleep(BUILD_LOG_POLL_MS, signal);
+  }
+}
+
+// Escreve um AsyncIterable<string> como SSE (`data: <linha>\n\n` por linha) e fecha ao acabar ou ao desconectar.
+async function sendSse(request: FastifyRequest, reply: FastifyReply, lines: AsyncIterable<string>): Promise<void> {
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+  try {
+    for await (const line of lines) {
+      if (request.signal.aborted) break;
+      reply.raw.write(`data: ${line}\n\n`);
+    }
+  } finally {
+    reply.raw.end();
+  }
+}
 
 // Exatamente uma das duas origens: imagem pronta por digest, ou commit de um repo que o cluster constrói.
 // Qual é obrigatória depende da origem do serviço, e isso é checado na rota.
@@ -59,9 +121,9 @@ function toResponse(d: DeploymentRow) {
   };
 }
 
-export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; queue?: DeploymentQueue }> = async (
+export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; queue?: DeploymentQueue; runtime?: RuntimeReader }> = async (
   app,
-  { db, keyring, queue },
+  { db, keyring, queue, runtime },
 ) => {
   app.post(
     "/services/:instanceId/deployments",
@@ -335,32 +397,86 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
     },
   );
 
-  // Último retrato dos logs do build. Vazio enquanto o build não começou (ou para deployments de imagem).
+  // Sem `stream`: último retrato dos logs do build (vazio antes do build começar, ou para deployments de imagem).
+  // Com `stream=build|runtime`: abre um SSE e faz o tail (architecture.md §9, §10).
   app.get(
     "/deployments/:deploymentId/logs",
     {
       config: {
         openapi: {
           operationId: "getDeploymentLogs",
-          tags: ["Deployments"],
-          summary: "Logs do build do deployment (gate, clone e build); o conteúdo é o último retrato salvo",
+          tags: ["Deployments", "Observabilidade"],
+          summary: "Logs do deployment: snapshot do build sem `stream`, ou tail por SSE com `stream=build|runtime`",
           pathSchema: deploymentParams,
-          success: { status: 200, description: "Logs", schema: BuildLogSchema },
-          errors: [404],
+          querySchema: deploymentLogsQuery,
+          success: { status: 200, description: "Logs (JSON sem `stream`; `text/event-stream` com `stream`)", schema: BuildLogSchema },
+          errors: [404, 503],
         },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const { deploymentId } = deploymentParams.parse(request.params);
+      const query = deploymentLogsQuery.parse(request.query);
       const notFound = () => new ApiError(404, "deployment_not_found", "Deployment não encontrado.");
-      const [dep] = await db.select({ serviceInstanceId: deployments.serviceInstanceId }).from(deployments).where(eq(deployments.id, deploymentId));
+      const [dep] = await db
+        .select({ serviceInstanceId: deployments.serviceInstanceId, environmentId: serviceInstances.environmentId })
+        .from(deployments)
+        .innerJoin(serviceInstances, eq(serviceInstances.id, deployments.serviceInstanceId))
+        .where(eq(deployments.id, deploymentId));
       if (!dep) throw notFound();
       await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch(() => {
         throw notFound();
       });
 
-      const [row] = await db.select().from(buildLogs).where(eq(buildLogs.deploymentId, deploymentId));
-      return { content: row?.content ?? "", updatedAt: row?.updatedAt ?? null };
+      if (!query.stream) {
+        const [row] = await db.select().from(buildLogs).where(eq(buildLogs.deploymentId, deploymentId));
+        return { content: row?.content ?? "", updatedAt: row?.updatedAt ?? null };
+      }
+
+      if (query.stream === "build") {
+        return sendSse(request, reply, tailBuildLog(db, deploymentId, request.signal));
+      }
+
+      if (!runtime) throw new ApiError(503, "runtime_unavailable", "Runtime não configurado nesta API.");
+      const ref = { name: workloadName(dep.serviceInstanceId), namespace: namespaceFor(dep.environmentId) };
+      return sendSse(request, reply, runtime.tailLogs(ref, query.since ? { since: query.since } : undefined));
+    },
+  );
+
+  // Snapshot básico do runtime da instância. Sem série temporal real no MVP: `from`/`to`/`metric` só documentam
+  // o contrato que a arquitetura prevê (architecture.md §9, §10); a resposta é sempre o estado atual.
+  app.get(
+    "/services/:instanceId/metrics",
+    {
+      config: {
+        openapi: {
+          operationId: "getServiceMetrics",
+          tags: ["Observabilidade"],
+          summary: "Snapshot do runtime de uma instância (réplicas e estado); sem série temporal no MVP",
+          pathSchema: instanceParams,
+          querySchema: metricsQuery,
+          success: { status: 200, description: "Snapshot de métricas", schema: MetricsSnapshotSchema },
+          errors: [404, 503],
+        },
+      },
+    },
+    async (request) => {
+      const { instanceId } = instanceParams.parse(request.params);
+      metricsQuery.parse(request.query);
+      await requireInstanceAccess(db, request.auth!.userId, instanceId);
+      if (!runtime) throw new ApiError(503, "runtime_unavailable", "Runtime não configurado nesta API.");
+
+      const [row] = await db.select({ environmentId: serviceInstances.environmentId }).from(serviceInstances).where(eq(serviceInstances.id, instanceId));
+      const ref = { name: workloadName(instanceId), namespace: namespaceFor(row!.environmentId) };
+      const status = await runtime.getStatus(ref);
+
+      return {
+        instanceId,
+        replicas: status?.replicas ?? 0,
+        readyReplicas: status?.readyReplicas ?? 0,
+        image: status?.image ?? null,
+        status: status && status.readyReplicas > 0 ? "running" : "stopped",
+      };
     },
   );
 };

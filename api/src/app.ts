@@ -14,8 +14,9 @@ import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import type { DeploymentQueue } from "./queue.js";
+import type { RuntimeReader } from "./runtime.js";
 
-export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue }) {
+export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue; runtime?: RuntimeReader }) {
   const app = Fastify({ logger: opts.logger ?? false });
   registerOpenApi(app, { version: "0.1.0" });
   app.register(docsRoutes);
@@ -32,7 +33,7 @@ export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; que
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
-      await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue });
+      await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue, runtime: opts.runtime });
     },
     { prefix: "/v1" },
   );

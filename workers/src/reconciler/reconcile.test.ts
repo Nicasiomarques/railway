@@ -167,6 +167,7 @@ describe("handleReconcileJob: classificação de falhas", () => {
         throw new PermanentError("spec rejeitada pelo cluster", "d1");
       },
       getStatus: async () => null,
+      tailLogs: async function* () {},
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
@@ -183,6 +184,7 @@ describe("handleReconcileJob: classificação de falhas", () => {
         throw new Error("api do cluster fora do ar");
       },
       getStatus: async () => null,
+      tailLogs: async function* () {},
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
@@ -199,6 +201,7 @@ describe("handleReconcileJob: classificação de falhas", () => {
         throw new Error("api do cluster fora do ar");
       },
       getStatus: async () => null,
+      tailLogs: async function* () {},
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
