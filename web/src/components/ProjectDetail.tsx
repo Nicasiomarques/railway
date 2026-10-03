@@ -6,6 +6,7 @@ import { DeploymentsPanel } from "./DeploymentsPanel";
 import { VariablesPanel } from "./VariablesPanel";
 import { LogsPanel } from "./LogsPanel";
 import { MetricsPanel } from "./MetricsPanel";
+import { DomainsPanel } from "./DomainsPanel";
 
 const KINDS = ["web", "worker", "postgres", "redis"] as const;
 const SOURCES = ["github_repo", "image", "template"] as const;
@@ -191,6 +192,7 @@ export function ProjectDetail({
           <VariablesPanel key={`${deploying.instanceId}-vars`} instanceId={deploying.instanceId} canWrite={canWrite} />
           <MetricsPanel key={`${deploying.instanceId}-metrics`} instanceId={deploying.instanceId} />
           <LogsPanel key={`${deploying.instanceId}-logs`} instanceId={deploying.instanceId} />
+          <DomainsPanel key={`${deploying.instanceId}-domains`} instanceId={deploying.instanceId} canWrite={canWrite} />
         </>
       )}
     </section>

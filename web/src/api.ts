@@ -98,3 +98,26 @@ export type MetricsSnapshot = {
   image: string | null;
   status: "running" | "stopped";
 };
+
+// From GET/POST /services/{instanceId}/domains and DELETE .../domains/{domainId} (api/src/routes/domains.ts).
+export type Domain = {
+  id: string;
+  serviceInstanceId: string;
+  hostname: string;
+  type: "auto" | "custom";
+  tlsState: "pending" | "issued" | "failed";
+  createdAt: string;
+  updatedAt: string;
+};
+
+// From GET /organizations/{organizationId}/audit-logs, paginated by cursor like GET /projects
+// (api/src/routes/projects.ts: { data, nextCursor }). This route is being built by another agent in
+// parallel and may not exist yet; AuditLogPanel is written against this expected contract regardless.
+export type AuditLogEntry = {
+  id: string;
+  actorId: string | null;
+  action: string;
+  target: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+};

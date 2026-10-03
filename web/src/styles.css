@@ -146,3 +146,16 @@ pre.terminal { background: #0b0d12; color: #d8dee9; border: 1px solid var(--bord
 .metrics { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
 .status-running { color: #3ddc97; border-color: #3ddc97; }
 .status-stopped { color: var(--muted); }
+
+/* Domains */
+.domains { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
+.domains .card-row { align-items: center; }
+.status-pending { color: #e4c044; border-color: #e4c044; }
+.status-issued { color: #3ddc97; border-color: #3ddc97; }
+.status-failed { color: var(--danger); border-color: var(--danger); }
+
+/* Audit log */
+.audit-log { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 12px; }
+.audit-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+.audit-table th { text-align: left; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.audit-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
