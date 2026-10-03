@@ -37,7 +37,7 @@ export const environmentProvisioningStatus = pgEnum("environment_provisioning_st
   "failed",
 ]);
 
-// Identidade vem de provedor externo; guardamos só o vínculo.
+// Identity comes from an external provider; we only store the link.
 export const users = pgTable(
   "users",
   {
@@ -104,7 +104,7 @@ export const environments = pgTable(
     branchRule: text("branch_rule"),
     ttlAt: timestamp("ttl_at", { withTimezone: true }),
     sleepPolicy: jsonb("sleep_policy"),
-    // Saga de provisionamento (architecture.md §6): cada passo concluído fica registrado para retomar do ponto de falha.
+    // Provisioning saga (architecture.md §6): each completed step is recorded to resume from the point of failure.
     provisioningStatus: environmentProvisioningStatus("provisioning_status").notNull().default("pending"),
     provisioningSteps: jsonb("provisioning_steps").$type<string[]>().notNull().default([]),
     provisioningError: text("provisioning_error"),
@@ -114,7 +114,7 @@ export const environments = pgTable(
   (t) => [uniqueIndex("environments_project_name_idx").on(t.projectId, t.name)],
 );
 
-// Service é a definição; ServiceInstance é a presença dela em um ambiente.
+// Service is the definition; ServiceInstance is its presence in an environment.
 export const services = pgTable(
   "services",
   {
@@ -125,7 +125,7 @@ export const services = pgTable(
     name: text("name").notNull(),
     kind: text("kind").notNull(),
     source: serviceSource("source").notNull(),
-    // Só para source github_repo: URL do clone. Commits chegam pelo deployment.
+    // Only for source github_repo: clone URL. Commits arrive via the deployment.
     repoUrl: text("repo_url"),
     rootDir: text("root_dir").notNull().default("/"),
     detectionSnapshot: jsonb("detection_snapshot"),
@@ -155,13 +155,13 @@ export const serviceInstances = pgTable(
   (t) => [uniqueIndex("service_instances_svc_env_idx").on(t.serviceId, t.environmentId)],
 );
 
-// Snapshot imutável de variáveis resolvidas no momento do deploy.
+// Immutable snapshot of variables resolved at deploy time.
 export const envSnapshots = pgTable("env_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
   serviceInstanceId: uuid("service_instance_id")
     .notNull()
     .references(() => serviceInstances.id),
-  // Valores de secrets ficam cifrados (envelope); nunca em texto puro.
+  // Secret values are encrypted (envelope); never in plain text.
   payloadEnc: text("payload_enc").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -181,7 +181,7 @@ export const deployments = pgTable(
     trigger: deploymentTrigger("triggered_by").notNull(),
     imageDigest: text("image_digest"),
     envSnapshotId: uuid("env_snapshot_id").references(() => envSnapshots.id),
-    // Rollback aponta para o deployment de origem, sem rebuild.
+    // Rollback points to the source deployment, without a rebuild.
     rollbackOfId: uuid("rollback_of_id"),
     ...timestamps,
   },
@@ -218,8 +218,8 @@ export const builds = pgTable("builds", {
   ...timestamps,
 });
 
-// Último retrato dos logs do build (gate, clone e build). Uma linha por deployment, sobrescrita a cada leitura.
-// O builds.logsRef fica para armazenamento externo no futuro; por enquanto o conteúdo fica aqui.
+// Latest snapshot of the build logs (gate, clone and build). One row per deployment, overwritten on each read.
+// builds.logsRef is reserved for external storage in the future; for now the content lives here.
 export const buildLogs = pgTable("build_logs", {
   deploymentId: uuid("deployment_id")
     .primaryKey()
@@ -244,7 +244,7 @@ export const variables = pgTable(
   },
   (t) => [
     index("variables_scope_key_idx").on(t.scope, t.key),
-    // NULLs não colidem: linhas de outros escopos não afetam esta unicidade.
+    // NULLs don't collide: rows from other scopes don't affect this uniqueness.
     uniqueIndex("variables_instance_key_idx").on(t.serviceInstanceId, t.key),
   ],
 );
@@ -289,7 +289,7 @@ export const githubRepoLinks = pgTable("github_repo_links", {
   ...timestamps,
 });
 
-// Append-only: sem updatedAt e sem soft delete de propósito.
+// Append-only: no updatedAt and intentionally no soft delete.
 export const usageEvents = pgTable(
   "usage_events",
   {
@@ -342,7 +342,7 @@ export const apiTokens = pgTable(
   (t) => [uniqueIndex("api_tokens_hash_idx").on(t.tokenHash)],
 );
 
-// Respostas de POSTs com Idempotency-Key. Só gravadas quando a operação conclui com sucesso.
+// Responses for POSTs with an Idempotency-Key. Only recorded when the operation completes successfully.
 export const idempotencyKeys = pgTable(
   "idempotency_keys",
   {
