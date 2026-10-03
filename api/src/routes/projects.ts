@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { ProjectSchema, paginated } from "../openapi/schemas.js";
 import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
@@ -10,7 +11,7 @@ import type { Db } from "../db/client.js";
 import { auditLogs, environments, projects } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
-const createProjectBody = z.object({
+export const createProjectBody = z.object({
   organizationId: z.string().uuid(),
   name: z.string().trim().min(1).max(100),
   slug: z
@@ -20,14 +21,29 @@ const createProjectBody = z.object({
     .optional(),
 });
 
-const listProjectsQuery = z.object({
+export const listProjectsQuery = z.object({
   organizationId: z.string().uuid(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
 });
 
 export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
-  app.post("/projects", async (request, reply) => {
+  app.post(
+    "/projects",
+    {
+      config: {
+        openapi: {
+          operationId: "createProject",
+          tags: ["Projetos"],
+          summary: "Cria um projeto com o ambiente production",
+          bodySchema: createProjectBody,
+          idempotent: true,
+          success: { status: 201, description: "Projeto criado", schema: ProjectSchema },
+          errors: [403, 404, 409],
+        },
+      },
+    },
+    async (request, reply) => {
     const body = createProjectBody.parse(request.body);
     const userId = request.auth!.userId;
     const slug = body.slug ?? slugify(body.name);
@@ -74,7 +90,21 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
     return reply.code(result.status).send(result.body);
   });
 
-  app.get("/projects", async (request) => {
+  app.get(
+    "/projects",
+    {
+      config: {
+        openapi: {
+          operationId: "listProjects",
+          tags: ["Projetos"],
+          summary: "Lista os projetos de uma organização, paginados por cursor",
+          querySchema: listProjectsQuery,
+          success: { status: 200, description: "Projetos", schema: paginated(ProjectSchema) },
+          errors: [404],
+        },
+      },
+    },
+    async (request) => {
     const query = listProjectsQuery.parse(request.query);
     await requireMembership(db, request.auth!.userId, query.organizationId);
 

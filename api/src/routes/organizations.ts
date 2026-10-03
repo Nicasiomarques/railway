@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { OrganizationSchema, OrganizationSummarySchema, listOf } from "../openapi/schemas.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
 import { slugify } from "../slug.js";
@@ -8,7 +9,7 @@ import type { Db } from "../db/client.js";
 import { auditLogs, memberships, organizations } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
-const createOrganizationBody = z.object({
+export const createOrganizationBody = z.object({
   name: z.string().trim().min(1).max(100),
   slug: z
     .string()
@@ -18,7 +19,22 @@ const createOrganizationBody = z.object({
 });
 
 export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
-  app.post("/organizations", async (request, reply) => {
+  app.post(
+    "/organizations",
+    {
+      config: {
+        openapi: {
+          operationId: "createOrganization",
+          tags: ["Organizações"],
+          summary: "Cria uma organização; o criador vira owner",
+          bodySchema: createOrganizationBody,
+          idempotent: true,
+          success: { status: 201, description: "Organização criada", schema: OrganizationSchema },
+          errors: [409],
+        },
+      },
+    },
+    async (request, reply) => {
     const body = createOrganizationBody.parse(request.body);
     const userId = request.auth!.userId;
     const slug = body.slug ?? slugify(body.name);
@@ -53,7 +69,19 @@ export const organizationRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { 
     return reply.code(result.status).send(result.body);
   });
 
-  app.get("/organizations", async (request) => {
+  app.get(
+    "/organizations",
+    {
+      config: {
+        openapi: {
+          operationId: "listOrganizations",
+          tags: ["Organizações"],
+          summary: "Lista as organizações do usuário autenticado",
+          success: { status: 200, description: "Organizações", schema: listOf(OrganizationSummarySchema) },
+        },
+      },
+    },
+    async (request) => {
     const rows = await db
       .select({
         id: organizations.id,

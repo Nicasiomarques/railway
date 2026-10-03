@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { VariableListItemSchema, ResolvedVariableSchema, VariableUpsertSchema, listOf } from "../openapi/schemas.js";
 import { requireInstanceAccess } from "../access.js";
 import { ApiError } from "../errors.js";
 import { decryptValue, encryptValue, type Keyring } from "../crypto/envelope.js";
@@ -8,11 +9,11 @@ import type { Db } from "../db/client.js";
 import { auditLogs, variables } from "../db/schema.js";
 import { resolveInstanceEnv, validateReferences } from "../env/resolve.js";
 
-const instanceParams = z.object({ instanceId: z.string().uuid() });
-const keyParams = instanceParams.extend({
+export const instanceParams = z.object({ instanceId: z.string().uuid() });
+export const keyParams = instanceParams.extend({
   key: z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/, "use letras maiúsculas, números e _"),
 });
-const upsertBody = z.object({
+export const upsertBody = z.object({
   value: z.string().max(10_000),
   isSecret: z.boolean().default(false),
 });
@@ -21,7 +22,21 @@ const upsertBody = z.object({
 const contextFor = (instanceId: string, key: string) => `variable:${instanceId}:${key}`;
 
 export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = async (app, { db, keyring }) => {
-  app.get("/services/:instanceId/variables", async (request) => {
+  app.get(
+    "/services/:instanceId/variables",
+    {
+      config: {
+        openapi: {
+          operationId: "listVariables",
+          tags: ["Variáveis"],
+          summary: "Lista as variáveis da instância; secrets voltam sem valor",
+          pathSchema: instanceParams,
+          success: { status: 200, description: "Variáveis", schema: listOf(VariableListItemSchema) },
+          errors: [404],
+        },
+      },
+    },
+    async (request) => {
     const { instanceId } = instanceParams.parse(request.params);
     await requireInstanceAccess(db, request.auth!.userId, instanceId);
 
@@ -44,7 +59,21 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
   });
 
   // Ambiente final da instância, com referências resolvidas. Secrets vêm mascarados.
-  app.get("/services/:instanceId/env", async (request) => {
+  app.get(
+    "/services/:instanceId/env",
+    {
+      config: {
+        openapi: {
+          operationId: "getInstanceEnv",
+          tags: ["Variáveis"],
+          summary: "Ambiente final da instância, com referências resolvidas",
+          pathSchema: instanceParams,
+          success: { status: 200, description: "Ambiente resolvido", schema: listOf(ResolvedVariableSchema) },
+          errors: [404, 422],
+        },
+      },
+    },
+    async (request) => {
     const { instanceId } = instanceParams.parse(request.params);
     await requireInstanceAccess(db, request.auth!.userId, instanceId);
 
@@ -54,7 +83,22 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
     };
   });
 
-  app.put("/services/:instanceId/variables/:key", async (request) => {
+  app.put(
+    "/services/:instanceId/variables/:key",
+    {
+      config: {
+        openapi: {
+          operationId: "upsertVariable",
+          tags: ["Variáveis"],
+          summary: "Cria ou atualiza uma variável da instância",
+          pathSchema: keyParams,
+          bodySchema: upsertBody,
+          success: { status: 200, description: "Variável gravada", schema: VariableUpsertSchema },
+          errors: [403, 404, 422],
+        },
+      },
+    },
+    async (request) => {
     const { instanceId, key } = keyParams.parse(request.params);
     const body = upsertBody.parse(request.body);
     validateReferences(body.value);
@@ -94,7 +138,21 @@ export const variableRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = 
     return { key, isSecret: row.isSecret, version: row.version, updatedAt: row.updatedAt };
   });
 
-  app.delete("/services/:instanceId/variables/:key", async (request, reply) => {
+  app.delete(
+    "/services/:instanceId/variables/:key",
+    {
+      config: {
+        openapi: {
+          operationId: "deleteVariable",
+          tags: ["Variáveis"],
+          summary: "Remove uma variável da instância",
+          pathSchema: keyParams,
+          success: { status: 204, description: "Variável removida" },
+          errors: [403, 404],
+        },
+      },
+    },
+    async (request, reply) => {
     const { instanceId, key } = keyParams.parse(request.params);
     const userId = request.auth!.userId;
     const { organizationId } = await requireInstanceAccess(db, userId, instanceId, { write: true });

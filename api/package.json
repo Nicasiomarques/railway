@@ -16,11 +16,16 @@
     "start": "node --env-file-if-exists=.env dist/index.js"
   },
   "dependencies": {
+    "@railway-like/db": "workspace:*",
     "@railway-like/shared": "workspace:*",
+    "@stoplight/elements": "9.0.27",
+    "bullmq": "^5.81.5",
     "drizzle-orm": "^0.44.0",
     "fastify": "^5.6.0",
+    "ioredis": "^5.11.1",
     "pg": "^8.16.0",
-    "zod": "^3.25.0"
+    "zod": "^3.25.0",
+    "zod-to-json-schema": "3.24.6"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

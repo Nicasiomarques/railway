@@ -10,9 +10,15 @@ import { serviceRoutes } from "./routes/services.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
 import type { Keyring } from "./crypto/envelope.js";
+import { registerOpenApi } from "./openapi/index.js";
+import { docsRoutes } from "./openapi/docs.js";
+import { deploymentRoutes } from "./routes/deployments.js";
+import type { DeploymentQueue } from "./queue.js";
 
-export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean }) {
+export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue }) {
   const app = Fastify({ logger: opts.logger ?? false });
+  registerOpenApi(app, { version: "0.1.0" });
+  app.register(docsRoutes);
 
   app.get("/health", async () => ({ status: "ok" }));
 
@@ -26,6 +32,7 @@ export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean }) {
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
+      await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue });
     },
     { prefix: "/v1" },
   );

@@ -23,7 +23,7 @@ export type ResolvedVariable = { key: string; value: string; isSecret: boolean }
 
 // Monta o ambiente final de uma instância: valores próprios com referências substituídas.
 // Uma referência que resolve para secret torna a variável resultante secreta também.
-export async function resolveInstanceEnv(db: Db, keyring: Keyring, instanceId: string): Promise<ResolvedVariable[]> {
+export async function resolveInstanceEnv(db: Pick<Db, "select">, keyring: Keyring, instanceId: string): Promise<ResolvedVariable[]> {
   const own = await db
     .select()
     .from(variables)

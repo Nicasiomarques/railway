@@ -52,7 +52,7 @@ describe("serviços", () => {
       method: "POST",
       url: `/v1/projects/${projectId}/services`,
       headers: auth(token),
-      payload: { name: "api", kind: "web", source: "github_repo" },
+      payload: { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().rootDir).toBe("/");
@@ -72,7 +72,7 @@ describe("serviços", () => {
       method: "POST",
       url: `/v1/projects/${projectId}/services`,
       headers: auth(token),
-      payload: { name: "api", kind: "web", source: "github_repo" },
+      payload: { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
     });
     const list = await app.inject({ method: "GET", url: `/v1/projects/${projectId}/services`, headers: auth(token) });
     const names = list.json().data[0].instances.map((i: { environmentName: string }) => i.environmentName).sort();
@@ -81,7 +81,7 @@ describe("serviços", () => {
 
   it("retorna 409 para nome duplicado no mesmo projeto", async () => {
     const { token, projectId } = await setupProject();
-    const payload = { name: "api", kind: "web", source: "github_repo" };
+    const payload = { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" };
     await app.inject({ method: "POST", url: `/v1/projects/${projectId}/services`, headers: auth(token), payload });
     const res = await app.inject({ method: "POST", url: `/v1/projects/${projectId}/services`, headers: auth(token), payload });
     expect(res.statusCode).toBe(409);
@@ -94,7 +94,7 @@ describe("serviços", () => {
       method: "POST",
       url: `/v1/projects/${projectId}/services`,
       headers: auth(token),
-      payload: { name: "api", kind: "cron", source: "github_repo" },
+      payload: { name: "api", kind: "cron", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("validation_failed");
@@ -109,7 +109,7 @@ describe("serviços", () => {
       method: "POST",
       url: `/v1/projects/${projectId}/services`,
       headers: auth(viewer.token),
-      payload: { name: "api", kind: "web", source: "github_repo" },
+      payload: { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
     });
     expect(create.statusCode).toBe(403);
     expect(create.json().code).toBe("forbidden");
@@ -137,7 +137,7 @@ describe("serviços", () => {
   it("repetir com a mesma Idempotency-Key não cria outro serviço", async () => {
     const { token, projectId } = await setupProject();
     const headers = auth(token, { "idempotency-key": "svc-1" });
-    const payload = { name: "api", kind: "web", source: "github_repo" };
+    const payload = { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" };
     const a = await app.inject({ method: "POST", url: `/v1/projects/${projectId}/services`, headers, payload });
     const b = await app.inject({ method: "POST", url: `/v1/projects/${projectId}/services`, headers, payload });
     expect(b.json().id).toBe(a.json().id);

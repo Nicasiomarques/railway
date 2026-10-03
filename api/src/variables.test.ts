@@ -30,7 +30,7 @@ async function setup() {
     method: "POST",
     url: `/v1/projects/${project.id}/services`,
     headers: auth(token),
-    payload: { name: "api", kind: "web", source: "github_repo" },
+    payload: { name: "api", kind: "web", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
   });
   const list = (
     await app.inject({ method: "GET", url: `/v1/projects/${project.id}/services`, headers: auth(token) })

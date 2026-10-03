@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { ServiceWithInstancesSchema, ServiceListItemSchema, listOf } from "../openapi/schemas.js";
 import { requireProjectAccess } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
@@ -8,26 +9,58 @@ import type { Db } from "../db/client.js";
 import { auditLogs, environments, serviceInstances, services } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
-const projectParams = z.object({ projectId: z.string().uuid() });
+export const projectParams = z.object({ projectId: z.string().uuid() });
 
-const createServiceBody = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(63)
-    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use letras minúsculas, números e hífens"),
-  kind: z.enum(["web", "worker", "postgres", "redis"]),
-  source: z.enum(["github_repo", "image", "template"]),
-  rootDir: z
-    .string()
-    .startsWith("/")
-    .max(255)
-    .default("/"),
-});
+export const createServiceBody = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(63)
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use letras minúsculas, números e hífens"),
+    kind: z.enum(["web", "worker", "postgres", "redis"]),
+    source: z.enum(["github_repo", "image", "template"]),
+    rootDir: z
+      .string()
+      .startsWith("/")
+      .max(255)
+      .refine((p) => !p.split("/").includes(".."), "rootDir não pode conter ..")
+      .default("/"),
+    // URL do clone, só para github_repo. http(s) apenas: o build roda no cluster e não aceita outros protocolos.
+    repoUrl: z
+      .string()
+      .max(500)
+      .regex(/^https?:\/\/\S+$/, "use uma URL http(s)")
+      .optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.source === "github_repo" && !body.repoUrl) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl é obrigatória para github_repo" });
+    }
+    if (body.source !== "github_repo" && body.repoUrl) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl só existe para github_repo" });
+    }
+  });
 
 export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   // Cria o serviço e uma instância em cada ambiente do projeto, na mesma transação.
-  app.post("/projects/:projectId/services", async (request, reply) => {
+  app.post(
+    "/projects/:projectId/services",
+    {
+      config: {
+        openapi: {
+          operationId: "createService",
+          tags: ["Serviços"],
+          summary: "Cria um serviço e uma instância em cada ambiente do projeto",
+          pathSchema: projectParams,
+          bodySchema: createServiceBody,
+          idempotent: true,
+          success: { status: 201, description: "Serviço criado", schema: ServiceWithInstancesSchema },
+          errors: [403, 404, 409],
+        },
+      },
+    },
+    async (request, reply) => {
     const { projectId } = projectParams.parse(request.params);
     const body = createServiceBody.parse(request.body);
     const userId = request.auth!.userId;
@@ -71,7 +104,21 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
     return reply.code(result.status).send(result.body);
   });
 
-  app.get("/projects/:projectId/services", async (request) => {
+  app.get(
+    "/projects/:projectId/services",
+    {
+      config: {
+        openapi: {
+          operationId: "listServices",
+          tags: ["Serviços"],
+          summary: "Lista os serviços do projeto com suas instâncias por ambiente",
+          pathSchema: projectParams,
+          success: { status: 200, description: "Serviços", schema: listOf(ServiceListItemSchema) },
+          errors: [404],
+        },
+      },
+    },
+    async (request) => {
     const { projectId } = projectParams.parse(request.params);
     await requireProjectAccess(db, request.auth!.userId, projectId);
 
