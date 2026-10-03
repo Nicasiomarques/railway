@@ -8,7 +8,7 @@ export interface DeploymentEvent {
   reason?: string;
 }
 
-// Store em memória para testes. Espelha o contrato do Postgres, incluindo a escrita atômica de `promote`.
+// In-memory store for tests. Mirrors the Postgres contract, including `promote`'s atomic write.
 export class InMemoryDeploymentStore implements DeploymentStore {
   readonly events: DeploymentEvent[] = [];
   private readonly deployments = new Map<string, DeploymentRecord>();
@@ -58,7 +58,7 @@ export class InMemoryDeploymentStore implements DeploymentStore {
     for (const other of this.deployments.values()) {
       if (other.serviceInstanceId === target.serviceInstanceId && other.status === "Running" && other.id !== id) {
         other.status = "Superseded";
-        this.events.push({ deploymentId: other.id, from: "Running", to: "Superseded", reason: `substituído por ${id}` });
+        this.events.push({ deploymentId: other.id, from: "Running", to: "Superseded", reason: `superseded by ${id}` });
       }
     }
     target.status = "Running";

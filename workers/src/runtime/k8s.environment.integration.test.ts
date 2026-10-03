@@ -5,9 +5,9 @@ import { isPodReady, K8sRuntime } from "./k8s.js";
 import { DEFAULT_ENV_QUOTA, environmentLabels } from "./environment.js";
 import type { WorkloadSpec } from "./adapter.js";
 
-// Roda só com K8S_TEST_CONTEXT=k3d-railway-dev (ou outro contexto do kubeconfig).
-// Confirma no cluster real o que os testes unitários só checam como objeto: o namespace aceita os manifests
-// e um workload sem `resources` sobe com os padrões da LimitRange, dentro da quota.
+// Runs only with K8S_TEST_CONTEXT=k3d-railway-dev (or another kubeconfig context).
+// Confirms on the real cluster what the unit tests only check as objects: the namespace accepts the manifests
+// and a workload with no `resources` comes up with the LimitRange defaults, within the quota.
 const CONTEXT = process.env.K8S_TEST_CONTEXT;
 const APP_IMAGE = "nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0";
 
@@ -18,10 +18,10 @@ async function waitFor<T>(fn: () => Promise<T | null | false>, timeoutMs: number
     if (value) return value;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error(`timeout esperando: ${what}`);
+  throw new Error(`timeout waiting for: ${what}`);
 }
 
-describe.skipIf(!CONTEXT)("provisionamento de ambiente no cluster", () => {
+describe.skipIf(!CONTEXT)("environment provisioning on the cluster", () => {
   let kc: k8s.KubeConfig;
   let runtime: K8sRuntime;
   let net: k8s.NetworkingV1Api;
@@ -45,7 +45,7 @@ describe.skipIf(!CONTEXT)("provisionamento de ambiente no cluster", () => {
     await core.deleteNamespace({ name: namespace }).catch(() => undefined);
   });
 
-  it("aplica namespace, default-deny e quota, e um workload sem resources sobe dentro deles", async () => {
+  it("applies namespace, default-deny and quota, and a workload with no resources comes up within them", async () => {
     await runtime.ensureNamespace(namespace, environmentLabels("proj-int", environmentId));
     await runtime.applyDefaultDenyPolicy(namespace);
     await runtime.applyQuota(namespace, DEFAULT_ENV_QUOTA);
@@ -63,7 +63,7 @@ describe.skipIf(!CONTEXT)("provisionamento de ambiente no cluster", () => {
     const quota = await core.readNamespacedResourceQuota({ name: "env-quota", namespace });
     expect(quota.spec?.hard).toMatchObject({ pods: "20", "limits.memory": "8Gi" });
 
-    // Sem a LimitRange, a quota de CPU/memória rejeitaria este pod por falta de requests/limits.
+    // Without the LimitRange, the CPU/memory quota would reject this pod for lacking requests/limits.
     const spec: WorkloadSpec = { name, namespace, image: APP_IMAGE, env: {}, replicas: 1 };
     await runtime.applyWorkload(spec);
 
@@ -73,12 +73,12 @@ describe.skipIf(!CONTEXT)("provisionamento de ambiente no cluster", () => {
         return pods.items.find(isPodReady) ?? null;
       },
       120_000,
-      "pod do workload pronto dentro do ambiente provisionado",
+      "workload pod ready inside the provisioned environment",
     );
     expect(pod.spec?.containers[0]?.resources?.limits).toEqual({ cpu: "500m", memory: "512Mi" });
   });
 
-  it("reaplicar a saga é idempotente", async () => {
+  it("re-applying the saga is idempotent", async () => {
     await runtime.ensureNamespace(namespace, environmentLabels("proj-int", environmentId));
     await runtime.applyDefaultDenyPolicy(namespace);
     await runtime.applyQuota(namespace, DEFAULT_ENV_QUOTA);

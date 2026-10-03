@@ -3,21 +3,21 @@ import { envSnapshots, openEnvSnapshot, type Db, type Keyring } from "@railway-l
 import type { LoadEnv } from "./postgres-store.js";
 import { PermanentError } from "./errors.js";
 
-// Abre o snapshot de env do deployment. Sem snapshot o deploy não tem como ser correto:
-// o snapshot é gravado antes do deploy (architecture.md §5.2, passo 6), então a ausência é erro.
+// Opens the deployment's env snapshot. With no snapshot, the deploy can't possibly be correct:
+// the snapshot is written before the deploy (architecture.md §5.2, step 6), so its absence is an error.
 export function createEnvLoader(db: Db, keyring: Keyring): LoadEnv {
   return async (envSnapshotId) => {
-    if (!envSnapshotId) throw new PermanentError("deployment sem snapshot de env: não é possível convergir");
+    if (!envSnapshotId) throw new PermanentError("deployment has no env snapshot: cannot converge");
     const [row] = await db
       .select({ payloadEnc: envSnapshots.payloadEnc })
       .from(envSnapshots)
       .where(eq(envSnapshots.id, envSnapshotId));
-    if (!row) throw new PermanentError(`snapshot de env ${envSnapshotId} não encontrado`);
+    if (!row) throw new PermanentError(`env snapshot ${envSnapshotId} not found`);
     try {
       return openEnvSnapshot(keyring, envSnapshotId, row.payloadEnc);
     } catch (err) {
-      // Snapshot que não decifra ou não é JSON válido não melhora com retry.
-      throw new PermanentError(`snapshot de env ${envSnapshotId} inválido: ${(err as Error).message}`);
+      // A snapshot that doesn't decrypt or isn't valid JSON won't improve with a retry.
+      throw new PermanentError(`env snapshot ${envSnapshotId} is invalid: ${(err as Error).message}`);
     }
   };
 }

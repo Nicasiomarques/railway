@@ -10,7 +10,7 @@ import { PermanentError } from "./errors.js";
 const DATABASE_URL = process.env.WORKERS_TEST_DATABASE_URL;
 const keyring = { currentKid: "t", keys: new Map([["t", randomBytes(32)]]) };
 
-describe.skipIf(!DATABASE_URL)("createEnvLoader sobre Postgres", () => {
+describe.skipIf(!DATABASE_URL)("createEnvLoader over Postgres", () => {
   const { db, pool } = createDb(DATABASE_URL!);
   const load = createEnvLoader(db as Db, keyring);
 
@@ -32,21 +32,21 @@ describe.skipIf(!DATABASE_URL)("createEnvLoader sobre Postgres", () => {
     return row.id;
   }
 
-  it("decifra o snapshot do deployment", async () => {
+  it("decrypts the deployment's snapshot", async () => {
     const id = await snapshot({ DATABASE_URL: "postgres://app", PORT: "3000" });
     expect(await load(id)).toEqual({ DATABASE_URL: "postgres://app", PORT: "3000" });
   });
 
-  it("sem snapshot falha alto, como erro permanente", async () => {
+  it("with no snapshot it fails loudly, as a permanent error", async () => {
     await expect(load(null)).rejects.toBeInstanceOf(PermanentError);
-    await expect(load(null)).rejects.toThrow(/sem snapshot/);
+    await expect(load(null)).rejects.toThrow(/has no env snapshot/);
   });
 
-  it("snapshot inexistente falha alto", async () => {
-    await expect(load("00000000-0000-0000-0000-000000000000")).rejects.toThrow(/não encontrado/);
+  it("a nonexistent snapshot fails loudly", async () => {
+    await expect(load("00000000-0000-0000-0000-000000000000")).rejects.toThrow(/not found/);
   });
 
-  it("payload copiado de outro snapshot não decifra (contexto autenticado)", async () => {
+  it("a payload copied from another snapshot doesn't decrypt (authenticated context)", async () => {
     const source = await snapshot({ SECRET: "x" });
     const target = await snapshot({ OTHER: "y" });
     const [src] = await db.select({ payloadEnc: envSnapshots.payloadEnc }).from(envSnapshots).where(eq(envSnapshots.id, source));

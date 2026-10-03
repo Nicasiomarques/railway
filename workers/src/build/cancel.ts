@@ -1,7 +1,7 @@
 import type { CancelBuildJobData } from "@railway-like/shared";
 import type { Builder } from "./builder.js";
 
-// Sem builder configurado (modo memória), não há build para apagar.
+// Without a configured builder (in-memory mode), there's no build to delete.
 export async function handleCancelBuildJob(
   deps: { builder?: Builder },
   data: CancelBuildJobData,

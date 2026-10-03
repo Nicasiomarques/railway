@@ -4,8 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isPodReady, K8sRuntime } from "./k8s.js";
 import { specHash, type WorkloadSpec } from "./adapter.js";
 
-// Roda só com K8S_TEST_CONTEXT=k3d-railway-dev (ou outro contexto do kubeconfig).
-// A imagem é fixada por digest, como manda a arquitetura.
+// Runs only with K8S_TEST_CONTEXT=k3d-railway-dev (or another kubeconfig context).
+// The image is pinned by digest, as the architecture requires.
 const CONTEXT = process.env.K8S_TEST_CONTEXT;
 const APP_IMAGE = "nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0";
 
@@ -16,11 +16,11 @@ async function waitFor<T>(fn: () => Promise<T | null | false>, timeoutMs: number
     if (value) return value;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  throw new Error(`timeout esperando: ${what}`);
+  throw new Error(`timeout waiting for: ${what}`);
 }
 
 describe.skipIf(!CONTEXT)("K8sRuntime no cluster", () => {
-  // Montado em beforeAll: o corpo do describe roda mesmo quando os testes são pulados.
+  // Set up in beforeAll: the describe body runs even when the tests are skipped.
   let core: k8s.CoreV1Api;
   let runtime: K8sRuntime;
 
@@ -45,26 +45,26 @@ describe.skipIf(!CONTEXT)("K8sRuntime no cluster", () => {
     await core.deleteNamespace({ name: namespace }).catch(() => undefined);
   });
 
-  it("aplica o workload e fica pronto com a imagem pedida", async () => {
+  it("applies the workload and becomes ready with the requested image", async () => {
     const status = await waitFor(
       async () => {
         const s = await runtime.getStatus({ name, namespace });
         return s && s.readyReplicas >= 1 ? s : null;
       },
       180_000,
-      "réplica pronta (v1)",
+      "replica ready (v1)",
     );
     expect(status).toEqual({ image: APP_IMAGE, replicas: 1, readyReplicas: 1 });
   }, 200_000);
 
-  it("aplicar a mesma spec de novo é idempotente: nenhum pod novo", async () => {
+  it("applying the same spec again is idempotent: no new pod", async () => {
     const before = (await core.listNamespacedPod({ namespace, labelSelector: `platform/workload=${name}` })).items.map((p) => p.metadata?.name);
     await runtime.applyWorkload(spec({ GREETING: "v1" }));
     const after = (await core.listNamespacedPod({ namespace, labelSelector: `platform/workload=${name}` })).items.map((p) => p.metadata?.name);
     expect(after.sort()).toEqual(before.sort());
   });
 
-  it("mudar o env faz rollout: só conta como pronto o pod da spec nova", async () => {
+  it("changing the env triggers a rollout: only the pod of the new spec counts as ready", async () => {
     await runtime.applyWorkload(spec({ GREETING: "v2" }));
 
     await waitFor(
@@ -73,10 +73,10 @@ describe.skipIf(!CONTEXT)("K8sRuntime no cluster", () => {
         return s && s.readyReplicas >= 1 ? s : null;
       },
       180_000,
-      "réplica pronta (v2)",
+      "replica ready (v2)",
     );
 
-    // Pode haver um pod da v1 ainda pronto durante o rollout. O status tem que contar só os da v2.
+    // There may still be a ready v1 pod during the rollout. The status must only count the v2 ones.
     const v2 = specHash({ image: APP_IMAGE, env: { GREETING: "v2" } });
     const readyV2 = (await readyPods()).filter((p) => p.metadata?.labels?.["platform/spec-hash"] === v2).length;
     const current = (await runtime.getStatus({ name, namespace }))!;
@@ -84,7 +84,7 @@ describe.skipIf(!CONTEXT)("K8sRuntime no cluster", () => {
     expect(readyV2).toBeGreaterThanOrEqual(1);
   }, 200_000);
 
-  it("workload inexistente devolve null", async () => {
-    expect(await runtime.getStatus({ name: "wl-nao-existe", namespace })).toBeNull();
+  it("nonexistent workload returns null", async () => {
+    expect(await runtime.getStatus({ name: "wl-does-not-exist", namespace })).toBeNull();
   });
 });

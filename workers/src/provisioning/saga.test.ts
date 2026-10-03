@@ -10,7 +10,7 @@ const ENV = "env-1";
 const NS = namespaceFor(ENV);
 const BUDGET = { attemptsMade: 0, maxAttempts: 3 };
 
-// Registra as chamadas ao runtime, para verificar quais passos rodaram.
+// Records the calls to the runtime, to verify which steps ran.
 class SpyRuntime implements EnvironmentRuntime {
   readonly calls: string[] = [];
   constructor(private readonly inner: EnvironmentRuntime = new InMemoryRuntime()) {}
@@ -28,13 +28,13 @@ class SpyRuntime implements EnvironmentRuntime {
   }
 }
 
-// Falha na primeira chamada de cada passo listado.
+// Fails on the first call of each listed step.
 class FlakyRuntime extends SpyRuntime {
   constructor(private readonly failOn: string) {
     super();
   }
   async applyDefaultDenyPolicy(ns: string) {
-    if (this.failOn === "default-deny-policy") throw new Error("API do cluster indisponível");
+    if (this.failOn === "default-deny-policy") throw new Error("cluster API unavailable");
     return super.applyDefaultDenyPolicy(ns);
   }
 }
@@ -46,7 +46,7 @@ function setup(overrides: { status?: "pending" | "provisioning" | "ready" | "fai
 }
 
 describe("provisionEnvironment", () => {
-  it("aplica namespace, default-deny e quota nessa ordem e marca o ambiente como ready", async () => {
+  it("applies namespace, default-deny and quota in that order and marks the environment as ready", async () => {
     const store = setup();
     const runtime = new InMemoryRuntime();
     const spy = new SpyRuntime(runtime);
@@ -70,7 +70,7 @@ describe("provisionEnvironment", () => {
     });
   });
 
-  it("retoma do ponto de falha: passos já concluídos não rodam de novo", async () => {
+  it("resumes from the point of failure: already completed steps don't run again", async () => {
     const store = setup({ status: "provisioning", completedSteps: ["namespace"] });
     const spy = new SpyRuntime();
 
@@ -80,7 +80,7 @@ describe("provisionEnvironment", () => {
     expect(store.snapshot(ENV)?.status).toBe("ready");
   });
 
-  it("ambiente já pronto não toca o runtime", async () => {
+  it("an already ready environment doesn't touch the runtime", async () => {
     const store = setup({ status: "ready", completedSteps: ["namespace", "default-deny-policy", "quota"] });
     const spy = new SpyRuntime();
 
@@ -90,7 +90,7 @@ describe("provisionEnvironment", () => {
     expect(spy.calls).toEqual([]);
   });
 
-  it("ambiente inexistente devolve missing sem tocar o runtime", async () => {
+  it("a nonexistent environment returns missing without touching the runtime", async () => {
     const spy = new SpyRuntime();
 
     const result = await provisionEnvironment({ store: setup(), runtime: spy }, { environmentId: "nope" });
@@ -101,22 +101,22 @@ describe("provisionEnvironment", () => {
 });
 
 describe("handleProvisionEnvironmentJob", () => {
-  it("erro transitório: registra o erro, mantém o status e relança para retry", async () => {
+  it("transient error: records the error, keeps the status and rethrows for retry", async () => {
     const store = setup();
     const runtime = new FlakyRuntime("default-deny-policy");
 
     await expect(
       handleProvisionEnvironmentJob({ store, runtime }, { environmentId: ENV }, BUDGET),
-    ).rejects.toThrow("API do cluster indisponível");
+    ).rejects.toThrow("cluster API unavailable");
 
     expect(store.snapshot(ENV)).toMatchObject({
       status: "provisioning",
       completedSteps: ["namespace"],
-      error: "API do cluster indisponível",
+      error: "cluster API unavailable",
     });
   });
 
-  it("nova tentativa após falha transitória conclui a saga sem repetir o namespace", async () => {
+  it("retrying after a transient failure finishes the saga without repeating the namespace", async () => {
     const store = setup();
     const runtime = new InMemoryRuntime();
     const flaky = new FlakyRuntime("default-deny-policy");
@@ -130,7 +130,7 @@ describe("handleProvisionEnvironmentJob", () => {
     expect(store.snapshot(ENV)?.status).toBe("ready");
   });
 
-  it("na última tentativa, a falha marca o ambiente como failed com o motivo", async () => {
+  it("on the last attempt, the failure marks the environment as failed with the reason", async () => {
     const store = setup();
     const runtime = new FlakyRuntime("default-deny-policy");
 
@@ -143,7 +143,7 @@ describe("handleProvisionEnvironmentJob", () => {
     expect(result).toEqual({ kind: "failed", environmentId: ENV });
     expect(store.snapshot(ENV)).toMatchObject({
       status: "failed",
-      error: "erro após 3 tentativas: API do cluster indisponível",
+      error: "error after 3 attempts: cluster API unavailable",
     });
   });
 });

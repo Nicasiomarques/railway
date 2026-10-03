@@ -1,7 +1,7 @@
 import type { RuntimeAdapter, WorkloadRef, WorkloadSpec, WorkloadStatus } from "./adapter.js";
 import type { EnvironmentQuota, EnvironmentRuntime } from "./environment.js";
 
-// Runtime simulado: um rollout começa sem réplicas prontas e só fica pronto quando `markReady` é chamado.
+// Simulated runtime: a rollout starts with no ready replicas and only becomes ready when `markReady` is called.
 export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
   private readonly workloads = new Map<string, { spec: WorkloadSpec; readyReplicas: number }>();
   private readonly namespaces = new Map<string, Record<string, string>>();
@@ -20,7 +20,7 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     this.quotas.set(namespace, structuredClone(quota));
   }
 
-  // Leituras para os testes verificarem o estado do ambiente simulado.
+  // Reads for tests to check the state of the simulated environment.
   environmentState(namespace: string) {
     return {
       labels: this.namespaces.get(namespace) ?? null,
@@ -45,16 +45,16 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     };
   }
 
-  // Simula as réplicas do workload ficando prontas (sondagem de saúde passando).
+  // Simulates the workload's replicas becoming ready (health probe passing).
   markReady(name: string): void {
     const current = this.workloads.get(name);
-    if (!current) throw new Error(`workload ${name} não existe`);
+    if (!current) throw new Error(`workload ${name} does not exist`);
     current.readyReplicas = current.spec.replicas;
   }
 
   markUnready(name: string): void {
     const current = this.workloads.get(name);
-    if (!current) throw new Error(`workload ${name} não existe`);
+    if (!current) throw new Error(`workload ${name} does not exist`);
     current.readyReplicas = 0;
   }
 }

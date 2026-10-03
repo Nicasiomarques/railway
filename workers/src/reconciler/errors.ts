@@ -1,5 +1,5 @@
-// Erro que re-tentar não resolve (snapshot ausente ou corrompido, deployment sem imagem).
-// Quem captura marca o deployment como Failed na hora, sem gastar o orçamento de retries.
+// An error that retrying won't fix (missing or corrupted snapshot, deployment with no image).
+// Whoever catches it marks the deployment as Failed right away, without spending the retry budget.
 export class PermanentError extends Error {
   constructor(
     message: string,

@@ -4,12 +4,12 @@ import type { DeploymentStatus } from "@railway-like/shared";
 import type { DeploymentRecord, DeploymentStore } from "./store.js";
 import { PermanentError } from "./errors.js";
 
-// Resolve as variáveis do snapshot do deployment. Fica injetado porque o snapshot é cifrado
-// e a chave de envelope não é responsabilidade deste módulo.
+// Resolves the deployment's snapshot variables. Injected because the snapshot is encrypted
+// and the envelope key isn't this module's responsibility.
 export type LoadEnv = (envSnapshotId: string | null) => Promise<Record<string, string>>;
 
-// Store Postgres do reconciliador. Cada escrita de status grava também o evento em deployment_events,
-// na mesma transação.
+// Reconciler's Postgres store. Every status write also records the event in deployment_events,
+// in the same transaction.
 export class PostgresDeploymentStore implements DeploymentStore {
   constructor(
     private readonly db: Db,
@@ -50,7 +50,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
       repoUrl: row.repoUrl,
       rootDir: row.rootDir,
       env: await this.loadEnv(d.envSnapshotId).catch((err: unknown) => {
-        // Sem o id do deployment o reconciliador não consegue marcá-lo como Failed.
+        // Without the deployment id, the reconciler can't mark it as Failed.
         if (err instanceof PermanentError) throw new PermanentError(err.message, d.id);
         throw err;
       }),
@@ -96,7 +96,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
         .where(eq(deployments.id, id));
       if (!target || target.status !== "HealthChecking") return false;
 
-      // Trava a instância: duas promoções concorrentes da mesma instância não podem deixar dois Running.
+      // Locks the instance: two concurrent promotions of the same instance can't leave two Running.
       await tx.select({ id: serviceInstances.id }).from(serviceInstances).where(eq(serviceInstances.id, target.serviceInstanceId)).for("update");
 
       const superseded = await tx
@@ -115,7 +115,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
           deploymentId: previous.id,
           fromStatus: "Running",
           toStatus: "Superseded",
-          reason: `substituído por ${id}`,
+          reason: `superseded by ${id}`,
         });
       }
 
