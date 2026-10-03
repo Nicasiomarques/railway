@@ -4,6 +4,8 @@ import { api, ApiProblem, type Connection, type Environment, type Service } from
 import { ServiceCanvas } from "./ServiceCanvas";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { VariablesPanel } from "./VariablesPanel";
+import { LogsPanel } from "./LogsPanel";
+import { MetricsPanel } from "./MetricsPanel";
 
 const KINDS = ["web", "worker", "postgres", "redis"] as const;
 const SOURCES = ["github_repo", "image", "template"] as const;
@@ -187,6 +189,8 @@ export function ProjectDetail({
             onClose={() => setDeploying(null)}
           />
           <VariablesPanel key={`${deploying.instanceId}-vars`} instanceId={deploying.instanceId} canWrite={canWrite} />
+          <MetricsPanel key={`${deploying.instanceId}-metrics`} instanceId={deploying.instanceId} />
+          <LogsPanel key={`${deploying.instanceId}-logs`} instanceId={deploying.instanceId} />
         </>
       )}
     </section>

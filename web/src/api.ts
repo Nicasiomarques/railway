@@ -89,3 +89,12 @@ export type Variable = {
   updatedAt: string;
   value: string | null;
 };
+
+// From GET /services/{instanceId}/metrics. Always a current snapshot (no time series in the MVP).
+export type MetricsSnapshot = {
+  instanceId: string;
+  replicas: number;
+  readyReplicas: number;
+  image: string | null;
+  status: "running" | "stopped";
+};
