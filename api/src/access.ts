@@ -1,0 +1,39 @@
+import { and, eq, isNull } from "drizzle-orm";
+import { ApiError } from "./errors.js";
+import type { Db } from "./db/client.js";
+import { memberships, projects } from "./db/schema.js";
+
+export type Role = "owner" | "admin" | "member" | "viewer";
+
+// Membership ausente vira 404 para não revelar a existência do recurso.
+export async function requireMembership(db: Db, userId: string, organizationId: string): Promise<Role> {
+  const [m] = await db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.organizationId, organizationId)))
+    .limit(1);
+  if (!m) throw new ApiError(404, "organization_not_found", "Organização não encontrada.");
+  return m.role;
+}
+
+export async function requireProjectAccess(
+  db: Db,
+  userId: string,
+  projectId: string,
+  opts: { write?: boolean } = {},
+): Promise<{ organizationId: string; role: Role }> {
+  const [row] = await db
+    .select({ organizationId: projects.organizationId, role: memberships.role })
+    .from(projects)
+    .innerJoin(
+      memberships,
+      and(eq(memberships.organizationId, projects.organizationId), eq(memberships.userId, userId)),
+    )
+    .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
+    .limit(1);
+  if (!row) throw new ApiError(404, "project_not_found", "Projeto não encontrado.");
+  if (opts.write && row.role === "viewer") {
+    throw new ApiError(403, "forbidden", "Papel 'viewer' não pode alterar este recurso.");
+  }
+  return row;
+}

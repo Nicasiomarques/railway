@@ -5,6 +5,9 @@ import { ApiError } from "./errors.js";
 import type { Db } from "./db/client.js";
 import { organizationRoutes } from "./routes/organizations.js";
 import { projectRoutes } from "./routes/projects.js";
+import { environmentRoutes } from "./routes/environments.js";
+import { serviceRoutes } from "./routes/services.js";
+import { connectionRoutes } from "./routes/connections.js";
 
 export function buildApp(db: Db, opts: { logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger ?? false });
@@ -17,6 +20,9 @@ export function buildApp(db: Db, opts: { logger?: boolean } = {}) {
       v1.addHook("onRequest", authenticate(db));
       await v1.register(organizationRoutes, { db });
       await v1.register(projectRoutes, { db });
+      await v1.register(environmentRoutes, { db });
+      await v1.register(serviceRoutes, { db });
+      await v1.register(connectionRoutes, { db });
     },
     { prefix: "/v1" },
   );

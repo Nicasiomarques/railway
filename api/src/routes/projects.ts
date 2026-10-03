@@ -1,12 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
 import { createdAtMs, decodeCursor, encodeCursor } from "../pagination.js";
 import { slugify } from "../slug.js";
 import type { Db } from "../db/client.js";
-import { auditLogs, memberships, projects } from "../db/schema.js";
+import { auditLogs, environments, projects } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
 const createProjectBody = z.object({
@@ -25,25 +26,14 @@ const listProjectsQuery = z.object({
   cursor: z.string().optional(),
 });
 
-// Membership ausente vira 404 para não revelar a existência da organização.
-async function requireMembership(db: Db, userId: string, organizationId: string) {
-  const [m] = await db
-    .select({ role: memberships.role })
-    .from(memberships)
-    .where(and(eq(memberships.userId, userId), eq(memberships.organizationId, organizationId)))
-    .limit(1);
-  if (!m) throw new ApiError(404, "organization_not_found", "Organização não encontrada.");
-  return m;
-}
-
 export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
   app.post("/projects", async (request, reply) => {
     const body = createProjectBody.parse(request.body);
     const userId = request.auth!.userId;
     const slug = body.slug ?? slugify(body.name);
 
-    const membership = await requireMembership(db, userId, body.organizationId);
-    if (membership.role === "viewer") {
+    const role = await requireMembership(db, userId, body.organizationId);
+    if (role === "viewer") {
       throw new ApiError(403, "forbidden", "Papel 'viewer' não pode criar projetos.");
     }
 
@@ -69,6 +59,8 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
           .insert(projects)
           .values({ organizationId: body.organizationId, name: body.name, slug })
           .returning();
+        // Todo projeto nasce com o ambiente de produção (ver architecture.md §6).
+        await tx.insert(environments).values({ projectId: project.id, name: "production", type: "production" });
         await tx.insert(auditLogs).values({
           organizationId: body.organizationId,
           actorId: userId,
