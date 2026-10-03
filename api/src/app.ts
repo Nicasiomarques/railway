@@ -1,8 +1,11 @@
 import Fastify from "fastify";
 import { ZodError } from "zod";
 import { authenticate } from "./auth.js";
+import type { AuthProvider } from "./auth/provider.js";
+import { LocalAuthProvider } from "./auth/local.js";
 import { ApiError } from "./errors.js";
 import type { Db } from "./db/client.js";
+import { authRoutes } from "./routes/auth.js";
 import { organizationRoutes } from "./routes/organizations.js";
 import { projectRoutes } from "./routes/projects.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -10,12 +13,13 @@ import { serviceRoutes } from "./routes/services.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
 import { domainRoutes } from "./routes/domains.js";
+import { volumeRoutes } from "./routes/volumes.js";
 import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { githubRoutes } from "./routes/github.js";
-import type { DeploymentQueue, DomainQueue } from "./queue.js";
+import type { BackupQueue, DeploymentQueue, DomainQueue } from "./queue.js";
 import type { GitHubChecksClient, GitHubInstallationTokenClient, GitHubPrCommentClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
 
@@ -26,15 +30,18 @@ export function buildApp(
     logger?: boolean;
     queue?: DeploymentQueue;
     domainQueue?: DomainQueue;
+    backupQueue?: BackupQueue;
     baseDomain?: string;
     githubWebhookSecret?: string;
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
     githubChecksClient?: GitHubChecksClient;
     githubPrCommentClient?: GitHubPrCommentClient;
     runtime?: RuntimeReader;
+    authProvider?: AuthProvider;
   },
 ) {
   const app = Fastify({ logger: opts.logger ?? false });
+  const authProvider = opts.authProvider ?? new LocalAuthProvider(db);
   registerOpenApi(app, { version: "0.1.0" });
   app.register(docsRoutes);
 
@@ -51,10 +58,17 @@ export function buildApp(
       await v1.register(connectionRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
+      await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });
       await v1.register(deploymentRoutes, { db, keyring: opts.keyring, queue: opts.queue, runtime: opts.runtime });
     },
     { prefix: "/v1" },
   );
+
+  // Registered outside the authenticated scope above, same reasoning as the GitHub webhook below:
+  // a client has no API token yet when it logs in, so this route can't sit behind the
+  // `authenticate` hook that protects the rest of /v1. Same "/v1" prefix, own encapsulated
+  // instance, so Fastify doesn't propagate v1's onRequest hook to it.
+  app.register(authRoutes, { authProvider, prefix: "/v1" });
 
   // Registered outside the scope above on purpose: the GitHub webhook authenticates via HMAC
   // (X-Hub-Signature-256), not Bearer, so it can't inherit the `authenticate` hook from the

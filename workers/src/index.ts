@@ -10,6 +10,10 @@ import { PostgresEnvironmentStore } from "./provisioning/postgres-store.js";
 import { InMemoryDomainProvider } from "./domain/in-memory.js";
 import { PostgresDomainStore } from "./domain/postgres-store.js";
 import { createDomainWorker } from "./domain/worker.js";
+import { InMemoryBackupProvider } from "./backup/in-memory.js";
+import { PostgresBackupStore } from "./backup/postgres-store.js";
+import { createBackupWorker } from "./backup/worker.js";
+import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -70,11 +74,23 @@ const domainWorker = createDomainWorker(connection, {
   provider: new InMemoryDomainProvider(),
 });
 
+// Volume backups (architecture.md §6): the backup provider still only simulates the volume
+// snapshot / logical dump step, but it now ships a real dump (volumeId + timestamp) to object
+// storage through LocalFsObjectStorageProvider (OBJECT_STORAGE_DIR, default
+// /tmp/railway-like-object-storage) instead of only an in-memory Map. No daily schedule is wired
+// here yet either — see workers/src/backup/worker.ts (scheduleDailyBackups) for how that would be
+// connected.
+const backupWorker = createBackupWorker(connection, {
+  store: new PostgresBackupStore(db),
+  provider: new InMemoryBackupProvider(new LocalFsObjectStorageProvider()),
+});
+
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
   await worker.close();
   await domainWorker.close();
+  await backupWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);
