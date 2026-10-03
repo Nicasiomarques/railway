@@ -6,7 +6,12 @@ import { createDeploymentQueue } from "./queue.js";
 if (!process.env.REDIS_URL) throw new Error("REDIS_URL é obrigatória: a API enfileira deployments no Redis.");
 
 const queue = createDeploymentQueue(process.env.REDIS_URL);
-const app = buildApp(db, { keyring: loadKeyringFromEnv(), logger: true, queue });
+const app = buildApp(db, {
+  keyring: loadKeyringFromEnv(),
+  logger: true,
+  queue,
+  githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET,
+});
 const port = Number(process.env.PORT ?? 3000);
 
 await app.listen({ port, host: "0.0.0.0" });

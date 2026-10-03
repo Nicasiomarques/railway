@@ -13,9 +13,21 @@ import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
+import { githubRoutes } from "./routes/github.js";
 import type { DeploymentQueue } from "./queue.js";
+import type { GitHubChecksClient, GitHubInstallationTokenClient } from "./github/clients.js";
 
-export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; queue?: DeploymentQueue }) {
+export function buildApp(
+  db: Db,
+  opts: {
+    keyring: Keyring;
+    logger?: boolean;
+    queue?: DeploymentQueue;
+    githubWebhookSecret?: string;
+    githubInstallationTokenClient?: GitHubInstallationTokenClient;
+    githubChecksClient?: GitHubChecksClient;
+  },
+) {
   const app = Fastify({ logger: opts.logger ?? false });
   registerOpenApi(app, { version: "0.1.0" });
   app.register(docsRoutes);
@@ -36,6 +48,21 @@ export function buildApp(db: Db, opts: { keyring: Keyring; logger?: boolean; que
     },
     { prefix: "/v1" },
   );
+
+  // Registado fora do escopo acima de propósito: o webhook do GitHub se autentica por HMAC
+  // (X-Hub-Signature-256), não por Bearer token, então não pode herdar o hook `authenticate`
+  // dos outros endpoints de /v1. Ficando numa instância encapsulada própria (mesmo prefixo
+  // "/v1"), o Fastify não propaga o onRequest de v1 para esta — a URL final é a mesma que a
+  // arquitetura (§10) e o resto do código espera: POST /v1/github/webhooks.
+  app.register(githubRoutes, {
+    db,
+    keyring: opts.keyring,
+    queue: opts.queue,
+    webhookSecret: opts.githubWebhookSecret,
+    installationTokenClient: opts.githubInstallationTokenClient,
+    checksClient: opts.githubChecksClient,
+    prefix: "/v1",
+  });
 
   app.setErrorHandler((err, request, reply) => {
     const problem = toProblem(err, request.url);

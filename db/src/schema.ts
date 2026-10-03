@@ -278,15 +278,28 @@ export const connections = pgTable(
   (t) => [primaryKey({ columns: [t.fromInstanceId, t.toInstanceId] })],
 );
 
-export const githubRepoLinks = pgTable("github_repo_links", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  projectId: uuid("project_id")
-    .notNull()
-    .references(() => projects.id),
-  installationId: bigint("installation_id", { mode: "bigint" }).notNull(),
-  repoId: bigint("repo_id", { mode: "bigint" }).notNull(),
-  branchRules: jsonb("branch_rules"),
-  ...timestamps,
+export const githubRepoLinks = pgTable(
+  "github_repo_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id),
+    installationId: bigint("installation_id", { mode: "bigint" }).notNull(),
+    repoId: bigint("repo_id", { mode: "bigint" }).notNull(),
+    branchRules: jsonb("branch_rules"),
+    ...timestamps,
+  },
+  // Um repo (dentro de uma instalação) liga a um único projeto; o webhook de push resolve por aqui.
+  (t) => [uniqueIndex("github_repo_links_installation_repo_idx").on(t.installationId, t.repoId)],
+);
+
+// Idempotência dos webhooks do GitHub por X-GitHub-Delivery. Não encaixa em `idempotency_keys`
+// porque não há um usuário autenticado por trás da chamada (é o GitHub chamando a plataforma).
+export const githubWebhookDeliveries = pgTable("github_webhook_deliveries", {
+  deliveryId: text("delivery_id").primaryKey(),
+  event: text("event").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 // Append-only: sem updatedAt e sem soft delete de propósito.
