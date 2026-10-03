@@ -1,4 +1,4 @@
-// Token de dev guardado no localStorage. Não é adequado para produção (use cookie httpOnly).
+// Dev token stored in localStorage. Not suitable for production (use an httpOnly cookie).
 const TOKEN_KEY = "railway_like.token";
 
 export const tokenStore = {

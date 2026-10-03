@@ -31,7 +31,7 @@ export function ProjectList({
       setName("");
       queryClient.invalidateQueries({ queryKey: ["projects", org.id] });
     } catch (err) {
-      setError(err instanceof ApiProblem ? err.message : "Erro ao criar projeto.");
+      setError(err instanceof ApiProblem ? err.message : "Error creating project.");
     }
   }
 
@@ -44,9 +44,9 @@ export function ProjectList({
 
       {org.role !== "viewer" && (
         <form className="inline" onSubmit={create}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome do novo projeto" />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New project name" />
           <button type="submit" disabled={!name.trim()}>
-            Criar projeto
+            Create project
           </button>
         </form>
       )}
@@ -61,7 +61,7 @@ export function ProjectList({
             </button>
           </li>
         ))}
-        {projects.data?.length === 0 && <li className="muted">Nenhum projeto ainda.</li>}
+        {projects.data?.length === 0 && <li className="muted">No projects yet.</li>}
       </ul>
     </section>
   );
