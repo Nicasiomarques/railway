@@ -124,7 +124,7 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           </div>
         </div>
 
-        <main>
+        <main className={project ? "wide" : undefined}>
           {orgs.isLoading && <p className="muted">Loading...</p>}
           {orgs.data && orgs.data.length === 0 && <p className="muted">No organizations for this token.</p>}
 
