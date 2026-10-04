@@ -5,6 +5,7 @@ import { ProjectSchema, paginated } from "../openapi/schemas.js";
 import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
+import { assertProjectQuota } from "../quota.js";
 import { createdAtMs, decodeCursor, encodeCursor } from "../pagination.js";
 import { slugify } from "../slug.js";
 import type { Db } from "../db/client.js";
@@ -58,6 +59,8 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       key: idempotencyKeyHeader(request.headers),
       payload: { ...body, slug },
       run: async (tx) => {
+        await assertProjectQuota(tx, body.organizationId);
+
         const [taken] = await tx
           .select({ id: projects.id })
           .from(projects)

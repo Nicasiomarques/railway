@@ -5,6 +5,7 @@ import { ServiceWithInstancesSchema, ServiceListItemSchema, listOf } from "../op
 import { requireProjectAccess } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
+import { assertServiceQuota } from "../quota.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, environments, serviceInstances, services } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
@@ -71,6 +72,8 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       key: idempotencyKeyHeader(request.headers),
       payload: { projectId, ...body },
       run: async (tx) => {
+        await assertServiceQuota(tx, projectId);
+
         const [taken] = await tx
           .select({ id: services.id })
           .from(services)
