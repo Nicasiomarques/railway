@@ -71,6 +71,20 @@
       "when": 1791072713951,
       "tag": "0009_aberrant_falcon",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791094439615,
+      "tag": "0010_canvas_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791094987510,
+      "tag": "0011_minio_template_source",
+      "breakpoints": true
     }
   ]
 }

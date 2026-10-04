@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Connection, Service } from "../api";
+import type { CanvasLayout, Connection, Service } from "../api";
 
 type Pos = { x: number; y: number };
 
@@ -7,19 +7,8 @@ const NODE_W = 200;
 const NODE_H = 72;
 const GAP = 24;
 const COLS = 3;
-
-// Positions live in localStorage per project. Persisting them in the backend requires its own endpoint.
-function storageKey(projectId: string) {
-  return `railway_like.canvas.${projectId}`;
-}
-
-function loadPositions(projectId: string): Record<string, Pos> {
-  try {
-    return JSON.parse(localStorage.getItem(storageKey(projectId)) ?? "{}");
-  } catch {
-    return {};
-  }
-}
+// Debounce for persisting layout changes to the backend while dragging (pointermove fires per frame).
+const SAVE_DEBOUNCE_MS = 500;
 
 // Default grid position for services that haven't been dragged yet.
 function defaultPos(index: number): Pos {
@@ -37,6 +26,8 @@ export function ServiceCanvas({
   connections,
   environment,
   canWrite,
+  layout,
+  onLayoutChange,
   onConnect,
   onDisconnect,
 }: {
@@ -45,13 +36,21 @@ export function ServiceCanvas({
   connections: Connection[];
   environment: string | null;
   canWrite: boolean;
+  layout: CanvasLayout;
+  onLayoutChange: (layout: CanvasLayout) => void;
   onConnect: (fromInstanceId: string, toInstanceId: string) => void;
   onDisconnect: (fromInstanceId: string, toInstanceId: string) => void;
 }) {
-  const [positions, setPositions] = useState<Record<string, Pos>>(() => loadPositions(projectId));
+  const [positions, setPositions] = useState<Record<string, Pos>>(layout);
   const [linking, setLinking] = useState<{ fromInstanceId: string; x: number; y: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The server is the source of truth; resync local state whenever the project or its saved layout changes.
+  useEffect(() => {
+    setPositions(layout);
+  }, [projectId, layout]);
 
   // One node per service that has an instance in the selected environment.
   const nodes: Node[] = services.flatMap((s) => {
@@ -68,9 +67,20 @@ export function ServiceCanvas({
     return { x: side === "right" ? p.x + NODE_W : p.x, y: p.y + NODE_H / 2 };
   };
 
+  // Persists to the backend with a debounce: dragging fires a position update per pointermove.
+  // Called only from the actions that actually change the layout (drag, reset) -- never from the
+  // resync effect above -- so loading or refetching the saved layout doesn't write it right back.
+  function scheduleSave(next: Record<string, Pos>) {
+    if (!canWrite) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => onLayoutChange(next), SAVE_DEBOUNCE_MS);
+  }
+
   useEffect(() => {
-    localStorage.setItem(storageKey(projectId), JSON.stringify(positions));
-  }, [projectId, positions]);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
 
   function onNodePointerDown(e: React.PointerEvent<HTMLDivElement>, node: Node, index: number) {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -83,7 +93,11 @@ export function ServiceCanvas({
     if (!d) return;
     const x = Math.max(0, d.origX + e.clientX - d.startX);
     const y = Math.max(0, d.origY + e.clientY - d.startY);
-    setPositions((p) => ({ ...p, [d.id]: { x, y } }));
+    setPositions((p) => {
+      const next = { ...p, [d.id]: { x, y } };
+      scheduleSave(next);
+      return next;
+    });
   }
 
   function onNodePointerUp() {
@@ -117,6 +131,7 @@ export function ServiceCanvas({
 
   function resetLayout() {
     setPositions({});
+    scheduleSave({});
   }
 
   const visibleConnections = connections.filter(

@@ -80,6 +80,25 @@ async function setupInstance() {
   return { token, orgId: org.id, instanceId };
 }
 
+async function setupInstanceWithSource(kind: string, source: string) {
+  const { token, org } = await createUserWithToken(db);
+  const project = await app.inject({
+    method: "POST",
+    url: "/v1/projects",
+    headers: auth(token),
+    payload: { organizationId: org.id, name: "Web" },
+  });
+  const projectId = project.json().id as string;
+  const service = await app.inject({
+    method: "POST",
+    url: `/v1/projects/${projectId}/services`,
+    headers: auth(token),
+    payload: { name: "app", kind, source },
+  });
+  const instanceId = service.json().instances[0].id as string;
+  return { token, orgId: org.id, instanceId };
+}
+
 const deploy = (token: string, instanceId: string, imageDigest = DIGEST, extra: Record<string, string> = {}) =>
   app.inject({
     method: "POST",
@@ -302,6 +321,46 @@ describe("service and deployment source", () => {
     const none = await app.inject({ method: "POST", url: `/v1/services/${instanceId}/deployments`, headers: auth(token), payload: {} });
     expect(both.statusCode).toBe(400);
     expect(none.statusCode).toBe(400);
+  });
+
+  it("a postgres_template service resolves its image without the caller passing one", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("postgres", "postgres_template");
+    const res = await app.inject({ method: "POST", url: `/v1/services/${instanceId}/deployments`, headers: auth(token), payload: {} });
+    expect(res.statusCode).toBe(202);
+    expect(res.json().imageDigest).toMatch(/^docker\.io\/library\/postgres@sha256:[a-f0-9]{64}$/);
+  });
+
+  it("a redis_template service resolves its image without the caller passing one", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("redis", "redis_template");
+    const res = await app.inject({ method: "POST", url: `/v1/services/${instanceId}/deployments`, headers: auth(token), payload: {} });
+    expect(res.statusCode).toBe(202);
+    expect(res.json().imageDigest).toMatch(/^docker\.io\/library\/redis@sha256:[a-f0-9]{64}$/);
+  });
+
+  it("an explicit imageDigest on a template service overrides the pinned one", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("postgres", "postgres_template");
+    const res = await deploy(token, instanceId, DIGEST);
+    expect(res.statusCode).toBe(202);
+    expect(res.json().imageDigest).toBe(DIGEST);
+  });
+
+  it("a postgres_template service rejects commitSha even though an image would resolve", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("postgres", "postgres_template");
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/services/${instanceId}/deployments`,
+      headers: auth(token),
+      payload: { commitSha: SHA },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("source_mismatch");
+  });
+
+  it("a minio_template service without a pinned or explicit image is rejected", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("object_storage", "minio_template");
+    const res = await app.inject({ method: "POST", url: `/v1/services/${instanceId}/deployments`, headers: auth(token), payload: {} });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("source_mismatch");
   });
 });
 

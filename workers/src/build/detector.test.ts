@@ -93,4 +93,94 @@ describe("stack detector", () => {
     expect(result.kind).toBe("unknown");
     expect(result.justification.join(" ")).toMatch(/add a Dockerfile/);
   });
+
+  it("Java/Maven with a declared java.version and Spring Boot", () => {
+    const result = detect(
+      tree({
+        "pom.xml": `<project><properties><java.version>17</java.version></properties>
+          <dependencies><dependency><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies></project>`,
+      }),
+    );
+    expect(result.kind).toBe("java");
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-17 AS build");
+    expect(result.dockerfile).toContain("RUN mvn -B -DskipTests package");
+    expect(result.dockerfile).toContain("FROM eclipse-temurin:17-jre-alpine");
+    expect(result.dockerfile).toContain('CMD ["java","-jar","/app/app.jar"]');
+    expect(result.justification.join(" ")).toMatch(/spring-boot-starter/);
+  });
+
+  it("Java/Maven without a declared version uses the default", () => {
+    const result = detect(tree({ "pom.xml": "<project></project>" }));
+    expect(result.dockerfile).toContain(`FROM maven:3.9-eclipse-temurin-21 AS build`);
+  });
+
+  it("Java/Maven with a two-digit java.version (e.g. 17) is not truncated", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>17</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-17 AS build");
+  });
+
+  it("Java/Maven with a two-digit java.version (e.g. 11) is not truncated", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>11</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-11 AS build");
+  });
+
+  it("Java/Maven with the legacy 1.8 notation resolves to 8", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>1.8</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-8 AS build");
+  });
+
+  it("Java/Gradle with sourceCompatibility", () => {
+    const result = detect(tree({ "build.gradle": "sourceCompatibility = '21'\n" }));
+    expect(result.kind).toBe("java");
+    expect(result.dockerfile).toContain("FROM gradle:8-jdk21 AS build");
+    expect(result.dockerfile).toContain("RUN gradle build -x test --no-daemon");
+    expect(result.dockerfile).toContain("COPY --from=build /app/build/libs/*.jar /app/app.jar");
+  });
+
+  it("Java/Gradle with a two-digit sourceCompatibility (e.g. 17) is not truncated", () => {
+    const result = detect(tree({ "build.gradle": "sourceCompatibility = '17'\n" }));
+    expect(result.dockerfile).toContain("FROM gradle:8-jdk17 AS build");
+  });
+
+  it("pom.xml takes priority over package.json (frontend assets alongside a Java backend)", () => {
+    const result = detect(tree({ "pom.xml": "<project></project>", "package.json": "{}" }));
+    expect(result.kind).toBe("java");
+  });
+
+  it("PHP/Laravel with composer.json", () => {
+    const result = detect(
+      tree({
+        "composer.json": JSON.stringify({ require: { php: "^8.2", "laravel/framework": "^11.0" } }),
+        "public/index.php": "",
+      }),
+    );
+    expect(result.kind).toBe("php");
+    expect(result.dockerfile).toContain("FROM php:8.2-cli-alpine");
+    expect(result.dockerfile).toContain("COPY --from=composer:2 /usr/bin/composer /usr/bin/composer");
+    expect(result.dockerfile).toContain('CMD ["php","-S","0.0.0.0:8080","-t","public"]');
+    expect(result.justification.join(" ")).toMatch(/laravel\/framework/);
+  });
+
+  it("plain PHP without a framework uses the root as docroot", () => {
+    const result = detect(tree({ "composer.json": "{}", "index.php": "" }));
+    expect(result.kind).toBe("php");
+    expect(result.dockerfile).toContain("FROM php:8.3-cli-alpine");
+    expect(result.dockerfile).toContain('CMD ["php","-S","0.0.0.0:8080","-t","."]');
+  });
+
+  it("PHP without an index.php is unknown", () => {
+    const result = detect(tree({ "composer.json": "{}" }));
+    expect(result.kind).toBe("unknown");
+  });
+
+  it("invalid composer.json is unknown", () => {
+    const result = detect(tree({ "composer.json": "{ not json" }));
+    expect(result.kind).toBe("unknown");
+    expect(result.justification.join(" ")).toMatch(/is not valid JSON/);
+  });
+
+  it("composer.json takes priority over package.json (frontend assets alongside a PHP backend)", () => {
+    const result = detect(tree({ "composer.json": "{}", "index.php": "", "package.json": "{}" }));
+    expect(result.kind).toBe("php");
+  });
 });
