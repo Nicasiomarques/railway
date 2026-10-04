@@ -36,6 +36,34 @@ describe("specHash", () => {
   });
 });
 
+describe("K8sRuntime.deleteNamespace", () => {
+  it("calls deleteNamespace on the core API", async () => {
+    const deleteNamespace = vi.fn().mockResolvedValue(undefined);
+    const kubeconfig = { makeApiClient: () => ({ deleteNamespace }) } as unknown as k8s.KubeConfig;
+    const runtime = new K8sRuntime(kubeconfig);
+
+    await runtime.deleteNamespace("env-ns");
+
+    expect(deleteNamespace).toHaveBeenCalledWith({ name: "env-ns" });
+  });
+
+  it("a 404 (already gone) is not an error", async () => {
+    const deleteNamespace = vi.fn().mockRejectedValue({ statusCode: 404 });
+    const kubeconfig = { makeApiClient: () => ({ deleteNamespace }) } as unknown as k8s.KubeConfig;
+    const runtime = new K8sRuntime(kubeconfig);
+
+    await expect(runtime.deleteNamespace("env-ns")).resolves.toBeUndefined();
+  });
+
+  it("another error propagates", async () => {
+    const deleteNamespace = vi.fn().mockRejectedValue({ statusCode: 500 });
+    const kubeconfig = { makeApiClient: () => ({ deleteNamespace }) } as unknown as k8s.KubeConfig;
+    const runtime = new K8sRuntime(kubeconfig);
+
+    await expect(runtime.deleteNamespace("env-ns")).rejects.toMatchObject({ statusCode: 500 });
+  });
+});
+
 // Mocks only what `tailLogs` touches: pod listing (CoreV1Api) and the SDK's log client.
 // Sem rede real; o cluster fica fora do escopo deste teste (ver k8s.integration.test.ts).
 function runtimeWithPods(items: k8s.V1Pod[]): { runtime: K8sRuntime; listNamespacedPod: ReturnType<typeof vi.fn> } {

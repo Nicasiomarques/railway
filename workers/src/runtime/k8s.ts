@@ -118,6 +118,17 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
     );
   }
 
+  // Idempotent: the namespace may already be gone (a previous attempt succeeded but the job was
+  // retried, or it was never provisioned in the first place) -- a 404 is not an error here.
+  async deleteNamespace(namespace: string): Promise<void> {
+    try {
+      await this.core.deleteNamespace({ name: namespace });
+    } catch (err) {
+      if (statusOf(err) === 404) return;
+      throw err;
+    }
+  }
+
   async getStatus({ name, namespace }: WorkloadRef): Promise<WorkloadStatus | null> {
     let deployment: k8s.V1Deployment;
     try {

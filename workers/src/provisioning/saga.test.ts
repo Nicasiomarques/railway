@@ -26,6 +26,10 @@ class SpyRuntime implements EnvironmentRuntime {
     this.calls.push("quota");
     return this.inner.applyQuota(ns, quota);
   }
+  async deleteNamespace(ns: string) {
+    this.calls.push("delete-namespace");
+    return this.inner.deleteNamespace(ns);
+  }
 }
 
 // Fails on the first call of each listed step.

@@ -11,12 +11,15 @@ import { organizationRoutes } from "./routes/organizations.js";
 import { projectRoutes } from "./routes/projects.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { serviceRoutes } from "./routes/services.js";
+import { templateRoutes } from "./routes/templates.js";
+import { importRoutes } from "./routes/import.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
 import { domainRoutes } from "./routes/domains.js";
 import { volumeRoutes } from "./routes/volumes.js";
 import { usageRoutes } from "./routes/usage.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { extensionRoutes } from "./routes/extensions.js";
 import { billingRoutes } from "./routes/billing.js";
 import { autoscalingRoutes } from "./routes/autoscaling.js";
 import { regionRoutes } from "./routes/regions.js";
@@ -25,7 +28,7 @@ import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { githubRoutes } from "./routes/github.js";
-import type { BackupQueue, DeploymentQueue, DomainQueue, WebhookQueue } from "./queue.js";
+import type { BackupQueue, DeploymentQueue, DomainQueue, EnvironmentQueue, WebhookQueue } from "./queue.js";
 import type { GitHubChecksClient, GitHubInstallationTokenClient, GitHubPrCommentClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
 import { registerMetrics } from "./metrics.js";
@@ -39,6 +42,7 @@ export function buildApp(
     domainQueue?: DomainQueue;
     backupQueue?: BackupQueue;
     webhookQueue?: WebhookQueue;
+    environmentQueue?: EnvironmentQueue;
     baseDomain?: string;
     githubWebhookSecret?: string;
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
@@ -92,14 +96,17 @@ export function buildApp(
       await v1.register(usageRoutes, { db });
       await v1.register(billingRoutes, { db });
       await v1.register(projectRoutes, { db });
-      await v1.register(environmentRoutes, { db });
+      await v1.register(environmentRoutes, { db, environmentQueue: opts.environmentQueue });
       await v1.register(serviceRoutes, { db });
+      await v1.register(templateRoutes, { db });
+      await v1.register(importRoutes, { db, keyring: opts.keyring });
       await v1.register(connectionRoutes, { db });
       await v1.register(autoscalingRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
       await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });
       await v1.register(webhookRoutes, { db });
+      await v1.register(extensionRoutes, { db });
       await v1.register(deploymentRoutes, {
         db,
         keyring: opts.keyring,

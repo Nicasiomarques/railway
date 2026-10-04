@@ -67,7 +67,7 @@ export const EnvironmentSchema = z.object({
   id: uuid,
   projectId: uuid,
   name: z.string(),
-  type: z.enum(["production", "staging", "preview", "custom"]),
+  type: z.enum(["production", "staging", "preview", "custom", "ci"]),
   parentEnvironmentId: uuid.nullable(),
   branchRule: z.string().nullable(),
   ttlAt: timestamp.nullable(),
@@ -121,6 +121,13 @@ export const ServiceWithInstancesSchema = ServiceSchema.extend({
 
 export const ServiceListItemSchema = ServiceSchema.extend({
   instances: z.array(ServiceInstanceSummarySchema),
+});
+
+export const MarketplaceTemplateSchema = z.object({
+  source: z.enum(["postgres_template", "redis_template", "minio_template"]),
+  name: z.string(),
+  description: z.string(),
+  kind: z.enum(["postgres", "redis", "object_storage"]),
 });
 
 export const ConnectionSchema = z.object({
@@ -181,6 +188,21 @@ export const WebhookSubscriptionSchema = z.object({
   id: uuid,
   organizationId: uuid,
   projectId: uuid.nullable(),
+  url: z.string(),
+  events: z.array(z.string()),
+  isActive: z.boolean(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+// An extension is a webhook subscription with a manifest (name + description) attached; see
+// routes/extensions.ts. The secret is never included, same reasoning as WebhookSubscriptionSchema.
+export const ExtensionSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  projectId: uuid.nullable(),
+  name: z.string(),
+  description: z.string(),
   url: z.string(),
   events: z.array(z.string()),
   isActive: z.boolean(),

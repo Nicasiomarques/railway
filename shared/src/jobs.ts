@@ -179,6 +179,43 @@ export const CRON_TRIGGER_JOB_RETRY = {
   removeOnFail: 50,
 } as const;
 
+// Environment decommissioning (TTL sweep). An environment's `ttl_at` (e.g. a PR preview marked
+// for removal in api/src/routes/github.ts, or a future ephemeral CI environment) was until now
+// only ever stamped, never acted on -- nothing consumed it. Own queue: tearing down an environment
+// has no relation to a deployment's, a domain's or a backup's lifecycle.
+export const ENVIRONMENTS_QUEUE = "environments";
+export const DECOMMISSION_ENVIRONMENT_JOB = "decommission-environment";
+
+export interface DecommissionEnvironmentJobData {
+  environmentId: string;
+}
+
+// One job per environment: re-enqueuing an environment already queued for teardown doesn't duplicate the work.
+export function decommissionEnvironmentJobId(data: DecommissionEnvironmentJobData): string {
+  return `decommission-${data.environmentId}`;
+}
+
+// Like a backup attempt, decommissioning either completes or fails outright (no external
+// propagation to wait out), so the budget is short, with exponential backoff for a transient
+// failure (cluster API momentarily unreachable).
+export const DECOMMISSION_ENVIRONMENT_JOB_RETRY = {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+// Internal "tick" job name used to wire a recurring sweep to the environments queue (see
+// workers/src/decommission/worker.ts: scheduleEnvironmentSweep/createEnvironmentWorker). Not part
+// of the API/worker job contract in the same sense as DECOMMISSION_ENVIRONMENT_JOB: nothing
+// produces this job today outside of scheduleEnvironmentSweep itself.
+export const ENVIRONMENT_SWEEP_TICK_JOB = "environment-sweep-tick";
+
+// Default sweep schedule: every 5 minutes. Unlike the daily backup tick, a stale preview or
+// ephemeral CI environment left running costs real cluster resources (a whole namespace, workloads
+// included) for every minute past its TTL, so this stays tight.
+export const ENVIRONMENT_SWEEP_CRON_DEFAULT = "*/5 * * * *";
+
 // Outbound webhooks (roadmap.md Phase 5: "Webhooks and extensions"). Own queue: a delivery's
 // lifecycle has no relation to a domain's, a deployment's or a backup's. Unlike those queues,
 // there's no stable per-resource jobId here: each enqueue call is one independent delivery

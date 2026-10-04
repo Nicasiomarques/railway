@@ -24,7 +24,9 @@ const softDelete = {
 };
 
 export const membershipRole = pgEnum("membership_role", ["owner", "admin", "member", "viewer"]);
-export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom"]);
+// "ci": ephemeral environment created directly for a CI job (roadmap.md Phase 5), as opposed to
+// "preview", which is only ever created by the GitHub PR webhook flow (api/src/routes/github.ts).
+export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom", "ci"]);
 export const serviceSource = pgEnum("service_source", [
   "github_repo",
   "image",
@@ -350,6 +352,11 @@ export const webhookSubscriptions = pgTable(
       .notNull()
       .references(() => organizations.id),
     projectId: uuid("project_id").references(() => projects.id),
+    // Set only through routes/extensions.ts (roadmap.md Phase 5 "extensions"): an extension is a
+    // webhook subscription with a manifest (name + description) attached, delivered through the
+    // exact same worker (workers/src/webhooks) as a plain subscription - null on one of those.
+    name: text("name"),
+    description: text("description"),
     url: text("url").notNull(),
     // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts);
     // never returned by the API once set (api/src/routes/webhooks.ts).

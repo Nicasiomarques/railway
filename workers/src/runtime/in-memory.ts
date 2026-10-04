@@ -30,6 +30,20 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     };
   }
 
+  // Mirrors K8sRuntime.deleteNamespace: removes the namespace's labels, policy, quota and every
+  // workload applied under it. Idempotent: an already-gone (or never provisioned) namespace is a no-op.
+  async deleteNamespace(namespace: string): Promise<void> {
+    this.namespaces.delete(namespace);
+    this.policies.delete(namespace);
+    this.quotas.delete(namespace);
+    for (const [name, workload] of this.workloads) {
+      if (workload.spec.namespace === namespace) {
+        this.workloads.delete(name);
+        this.logs.delete(name);
+      }
+    }
+  }
+
   async applyWorkload(spec: WorkloadSpec): Promise<void> {
     const current = this.workloads.get(spec.name);
     if (current && sameSpec(current.spec, spec)) return;

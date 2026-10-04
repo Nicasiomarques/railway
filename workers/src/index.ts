@@ -5,9 +5,11 @@ import {
   BACKUP_QUEUE,
   DEPLOYMENTS_QUEUE,
   DOMAINS_QUEUE,
+  ENVIRONMENTS_QUEUE,
   USAGE_QUEUE,
   WEBHOOKS_QUEUE,
   type CronTriggerJobData,
+  type DecommissionEnvironmentJobData,
   type ReconcileJobData,
 } from "@railway-like/shared";
 import { createEnvLoader } from "./reconciler/env-loader.js";
@@ -34,6 +36,8 @@ import { registerCronSchedules } from "./cron/scheduler.js";
 import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
 import { createWebhookWorker } from "./webhooks/worker.js";
 import { observeWorker, startMetricsServer } from "./metrics.js";
+import { PostgresDecommissionStore } from "./decommission/postgres-store.js";
+import { createEnvironmentWorker, scheduleEnvironmentSweep } from "./decommission/worker.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -153,6 +157,19 @@ const webhookWorker = createWebhookWorker(connection, {
 });
 observeWorker(webhookWorker, WEBHOOKS_QUEUE);
 
+// Environment TTL sweep: tears down a PR preview (api/src/routes/github.ts stamps ttl_at on
+// close) or, once ephemeral CI environments exist, one of those, once its ttl_at has passed.
+// Unlike the backup/usage ticks, this one is wired in production: a stale environment costs real
+// cluster resources every tick it's missed.
+const environmentsQueue = new Queue<DecommissionEnvironmentJobData>(ENVIRONMENTS_QUEUE, { connection });
+await scheduleEnvironmentSweep(environmentsQueue);
+const environmentWorker = createEnvironmentWorker(connection, {
+  store: new PostgresDecommissionStore(db),
+  runtime,
+  queue: environmentsQueue,
+});
+observeWorker(environmentWorker, ENVIRONMENTS_QUEUE);
+
 // Phase 3 (docs/roadmap.md) / architecture.md §9: scrape target for the job-level SLIs recorded
 // by observeWorker above. See docs/slos.md.
 const metricsServer = startMetricsServer(Number(process.env.METRICS_PORT ?? 9102));
@@ -168,6 +185,8 @@ async function shutdown(): Promise<void> {
   await deploymentsQueue.close();
   await cronQueue.close();
   await webhookWorker.close();
+  await environmentWorker.close();
+  await environmentsQueue.close();
   await metricsServer.close();
   await connection.quit();
   await pool.end();

@@ -5,10 +5,13 @@ import {
   BACKUP_QUEUE,
   CANCEL_BUILD_JOB,
   CANCEL_BUILD_JOB_RETRY,
+  DECOMMISSION_ENVIRONMENT_JOB,
+  DECOMMISSION_ENVIRONMENT_JOB_RETRY,
   DELIVER_WEBHOOK_JOB,
   DELIVER_WEBHOOK_JOB_RETRY,
   DEPLOYMENTS_QUEUE,
   DOMAINS_QUEUE,
+  ENVIRONMENTS_QUEUE,
   ISSUE_CERTIFICATE_JOB,
   ISSUE_CERTIFICATE_JOB_RETRY,
   RECONCILE_JOB,
@@ -16,10 +19,12 @@ import {
   RUN_BACKUP_JOB,
   RUN_BACKUP_JOB_RETRY,
   WEBHOOKS_QUEUE,
+  decommissionEnvironmentJobId,
   issueCertificateJobId,
   reconcileJobId,
   runBackupJobId,
   type CancelBuildJobData,
+  type DecommissionEnvironmentJobData,
   type DeliverWebhookJobData,
   type IssueCertificateJobData,
   type ReconcileJobData,
@@ -86,6 +91,33 @@ export function createBackupQueue(redisUrl: string): BackupQueue & { close(): Pr
     async enqueueRunBackup(data) {
       // One job per volume: re-enqueueing a backup already queued doesn't duplicate the work.
       await queue.add(RUN_BACKUP_JOB, data, { ...RUN_BACKUP_JOB_RETRY, jobId: runBackupJobId(data) });
+    },
+    async close() {
+      await queue.close();
+      await connection.quit();
+    },
+  };
+}
+
+// Production port for the environments queue (roadmap.md Phase 5: ephemeral CI environments).
+// Own queue: shared with the TTL sweep's periodic tick (workers/src/decommission/worker.ts), but
+// unrelated to a deployment's, a domain's or a backup's lifecycle. The API only ever enqueues an
+// immediate decommission (explicit teardown, e.g. the CI job finished); the sweep's own tick is
+// registered by the worker process, not here.
+export interface EnvironmentQueue {
+  enqueueDecommission(data: DecommissionEnvironmentJobData): Promise<void>;
+}
+
+export function createEnvironmentQueue(redisUrl: string): EnvironmentQueue & { close(): Promise<void> } {
+  const connection = new Redis(redisUrl, { maxRetriesPerRequest: null });
+  const queue = new Queue<DecommissionEnvironmentJobData>(ENVIRONMENTS_QUEUE, { connection });
+  return {
+    async enqueueDecommission(data) {
+      // One job per environment: re-enqueuing an environment already queued for teardown doesn't duplicate the work.
+      await queue.add(DECOMMISSION_ENVIRONMENT_JOB, data, {
+        ...DECOMMISSION_ENVIRONMENT_JOB_RETRY,
+        jobId: decommissionEnvironmentJobId(data),
+      });
     },
     async close() {
       await queue.close();

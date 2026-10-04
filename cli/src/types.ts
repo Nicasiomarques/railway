@@ -19,7 +19,8 @@ export type Environment = {
   id: string;
   projectId: string;
   name: string;
-  type: "production" | "staging" | "preview" | "custom";
+  type: "production" | "staging" | "preview" | "custom" | "ci";
+  ttlAt: string | null;
 };
 
 export type ServiceInstanceSummary = {
@@ -27,6 +28,13 @@ export type ServiceInstanceSummary = {
   environmentId: string;
   environmentName: string | null;
   replicas: number;
+};
+
+export type MarketplaceTemplate = {
+  source: "postgres_template" | "redis_template" | "minio_template";
+  name: string;
+  description: string;
+  kind: "postgres" | "redis" | "object_storage";
 };
 
 export type Service = {
