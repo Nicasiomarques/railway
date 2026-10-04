@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, tokenStore, type Organization } from "../api";
 import { AuditLogPanel } from "./AuditLogPanel";
+import { NavIcon } from "./NavIcon";
 import { NewServiceWizard } from "./NewServiceWizard";
 import { ProjectDetail } from "./ProjectDetail";
 import { ProjectList } from "./ProjectList";
@@ -9,6 +10,8 @@ import { UsagePanel } from "./UsagePanel";
 import { applyTheme, getStoredTheme, type Theme } from "../theme";
 
 type NavView = "projects" | "usage" | "audit";
+
+const SIDEBAR_COLLAPSED_KEY = "railway_like.sidebarCollapsed";
 
 export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const orgs = useQuery({
@@ -21,6 +24,13 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const [showWizard, setShowWizard] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   const selectedOrg = orgs.data?.find((o) => o.id === orgId) ?? orgs.data?.[0];
 
@@ -36,15 +46,36 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
     applyTheme(next);
   }
 
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // localStorage can be unavailable (private browsing, blocked storage) -- the toggle
+        // still works for this session, it just won't be remembered next time.
+      }
+      return next;
+    });
+  }
+
   return (
     <div className="shell">
       {mobileNavOpen && <div className="sidebar-overlay" onClick={() => setMobileNavOpen(false)} />}
-      <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
+      <aside className={[mobileNavOpen && "open", collapsed && "collapsed", "sidebar"].filter(Boolean).join(" ")}>
         <div className="brand">
           <span className="brand-dot" />
-          railway_like
+          <span className="brand-text">railway_like</span>
           <button className="ghost icon sidebar-close" onClick={() => setMobileNavOpen(false)} aria-label="Close menu">
             ✕
+          </button>
+          <button
+            className="ghost icon sidebar-collapse-btn"
+            onClick={toggleCollapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            <NavIcon name="collapse" />
           </button>
         </div>
 
@@ -68,38 +99,42 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
         <div className="nav-group">
           <span className="nav-label">Workspace</span>
-          <button className={view === "projects" && !project ? "nav-item active" : "nav-item"} onClick={() => goTo("projects")}>
-            <span className="dot" /> Projects
+          <button
+            className={view === "projects" && !project ? "nav-item active" : "nav-item"}
+            onClick={() => goTo("projects")}
+            title="Projects"
+          >
+            <NavIcon name="projects" /> <span className="nav-item-text">Projects</span>
           </button>
-          <button className={view === "usage" ? "nav-item active" : "nav-item"} onClick={() => goTo("usage")}>
-            <span className="dot" /> Usage
+          <button className={view === "usage" ? "nav-item active" : "nav-item"} onClick={() => goTo("usage")} title="Usage">
+            <NavIcon name="usage" /> <span className="nav-item-text">Usage</span>
           </button>
-          <button className={view === "audit" ? "nav-item active" : "nav-item"} onClick={() => goTo("audit")}>
-            <span className="dot" /> Audit log
+          <button className={view === "audit" ? "nav-item active" : "nav-item"} onClick={() => goTo("audit")} title="Audit log">
+            <NavIcon name="audit" /> <span className="nav-item-text">Audit log</span>
           </button>
         </div>
 
         {selectedOrg && selectedOrg.role !== "viewer" && (
-          <button onClick={() => setShowWizard(true)}>+ New</button>
+          <button className="new-service-btn" onClick={() => setShowWizard(true)} title="New">
+            <NavIcon name="new" /> <span className="nav-item-text">New</span>
+          </button>
         )}
 
         <div className="sidebar-spacer" />
 
         <div className="sidebar-foot">
-          <div className="theme-toggle">
-            <span className="muted">Theme</span>
-            <button className="ghost small" onClick={toggleTheme}>
-              {theme === "dark" ? "Dark" : "Light"}
-            </button>
-          </div>
+          <button className="ghost nav-item theme-toggle-btn" onClick={toggleTheme} title={theme === "dark" ? "Dark theme" : "Light theme"}>
+            <NavIcon name="theme" /> <span className="nav-item-text">{theme === "dark" ? "Dark" : "Light"}</span>
+          </button>
           <button
             className="ghost nav-item"
             onClick={() => {
               tokenStore.clear();
               onSignOut();
             }}
+            title="Sign out"
           >
-            Sign out
+            <NavIcon name="sign-out" /> <span className="nav-item-text">Sign out</span>
           </button>
         </div>
       </aside>

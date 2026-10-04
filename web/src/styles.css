@@ -148,10 +148,25 @@ label.checkbox { flex-direction: row; align-items: center; gap: 6px; font-size: 
 }
 .nav-item:hover { background: var(--panel-hover); color: var(--text); }
 .nav-item.active { background: var(--accent-bg); color: var(--accent-strong); font-weight: 600; }
-.nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.6; flex: none; }
+.nav-item svg { flex: none; }
+.new-service-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
 .sidebar-spacer { flex: 1; }
 .sidebar-foot { display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border); padding-top: 10px; }
-.theme-toggle { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; }
+
+.brand-text { flex: 1; }
+.sidebar-collapse-btn { margin-left: auto; flex: none; }
+
+/* Collapsed sidebar: icon rail only. Labels, the org switcher and nav-item text hide; icons stay
+   centered so the rail reads at a glance without needing to be expanded. */
+.sidebar.collapsed { width: 64px; padding-left: 8px; padding-right: 8px; }
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-item-text,
+.sidebar.collapsed .org-switcher { display: none; }
+.sidebar.collapsed .brand { justify-content: center; padding-left: 0; padding-right: 0; }
+.sidebar.collapsed .sidebar-collapse-btn { margin-left: 0; }
+.sidebar.collapsed .nav-item,
+.sidebar.collapsed .new-service-btn { justify-content: center; padding-left: 0; padding-right: 0; }
 
 .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -494,6 +509,17 @@ pre.terminal { background: var(--bg); color: #d8dee9; border: 1px solid var(--bo
   .sidebar.open { transform: translateX(0); }
   .sidebar-close { display: inline-flex; margin-left: auto; }
   .brand { justify-content: space-between; }
+  /* The drawer already has its own open/close affordance (hamburger + overlay); collapsing it to
+     an icon rail on top of that would just make a small touch target smaller. Always show it full
+     width and hide the collapse control here. */
+  .sidebar.collapsed { width: min(280px, 85vw); padding-left: 12px; padding-right: 12px; }
+  .sidebar.collapsed .brand-text,
+  .sidebar.collapsed .nav-label,
+  .sidebar.collapsed .nav-item-text,
+  .sidebar.collapsed .org-switcher { display: revert; }
+  .sidebar.collapsed .nav-item,
+  .sidebar.collapsed .new-service-btn { justify-content: flex-start; padding-left: 10px; padding-right: 10px; }
+  .sidebar-collapse-btn { display: none; }
   .sidebar-overlay {
     display: block;
     position: fixed;
