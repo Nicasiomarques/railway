@@ -3,6 +3,7 @@ import { ciEnvCreateCommand, ciEnvDestroyCommand } from "./commands/ci-env.js";
 import { deployCommand } from "./commands/deploy.js";
 import { domainAddCommand, domainListCommand, domainRemoveCommand } from "./commands/domain.js";
 import { envListCommand, envSetCommand, envUnsetCommand } from "./commands/env.js";
+import { importCommand } from "./commands/import.js";
 import { initCommand } from "./commands/init.js";
 import { loginCommand } from "./commands/login.js";
 import { logsCommand } from "./commands/logs.js";
@@ -124,6 +125,14 @@ templates
   .action(
     wrap((source: string, opts: { project?: string; name?: string }) => templateDeployCommand(source, opts)),
   );
+
+program
+  .command("import")
+  .description("Imports services from a Heroku app.json, Render render.yaml or Railway project export")
+  .argument("<provider>", "heroku, render or railway")
+  .argument("<file>", "Path to the manifest file")
+  .option("--project <id>", "Project ID (overrides the project config)")
+  .action(wrap((provider: string, file: string, opts: { project?: string }) => importCommand(provider, file, opts)));
 
 const domain = program.command("domain").description("Manages the configured service's domains");
 

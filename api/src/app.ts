@@ -12,6 +12,7 @@ import { projectRoutes } from "./routes/projects.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { serviceRoutes } from "./routes/services.js";
 import { templateRoutes } from "./routes/templates.js";
+import { importRoutes } from "./routes/import.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { variableRoutes } from "./routes/variables.js";
 import { domainRoutes } from "./routes/domains.js";
@@ -97,6 +98,7 @@ export function buildApp(
       await v1.register(environmentRoutes, { db, environmentQueue: opts.environmentQueue });
       await v1.register(serviceRoutes, { db });
       await v1.register(templateRoutes, { db });
+      await v1.register(importRoutes, { db, keyring: opts.keyring });
       await v1.register(connectionRoutes, { db });
       await v1.register(autoscalingRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });

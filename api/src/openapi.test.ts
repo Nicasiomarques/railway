@@ -30,14 +30,15 @@ describe("OpenAPI contract", () => {
     expect(doc.openapi).toBe("3.1.0");
   });
 
-  it("describes all 47 operations of the v1 API", async () => {
+  it("describes all 48 operations of the v1 API", async () => {
     const doc = await loadDoc();
     const ops = operations(doc);
-    expect(ops).toHaveLength(47);
+    expect(ops).toHaveLength(48);
     expect(ops.map((o) => `${o.method} ${o.path}`).sort()).toEqual(
       [
         "get /v1/templates",
         "post /v1/projects/{projectId}/templates/{source}/deploy",
+        "post /v1/projects/{projectId}/import",
         "post /v1/auth/login",
         "get /v1/organizations/{organizationId}/usage",
         "delete /v1/projects/{projectId}/connections",
