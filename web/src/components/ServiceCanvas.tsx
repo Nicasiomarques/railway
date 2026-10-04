@@ -132,6 +132,14 @@ export function ServiceCanvas({
     }
   }
 
+  // pointercancel means the gesture was interrupted (a touch scroll took over, pointer capture was
+  // lost, a system gesture stepped in, ...) -- never a completed click, so it must not open the
+  // inspector the way a genuine pointerup does. Only the drag/pointer-down state is cleared.
+  function onNodePointerCancel() {
+    drag.current = null;
+    setDraggingId(null);
+  }
+
   // Output port: dragging from it to another node creates the connection.
   function onPortPointerDown(e: React.PointerEvent<HTMLDivElement>, instanceId: string) {
     e.stopPropagation();
@@ -224,6 +232,7 @@ export function ServiceCanvas({
               onPointerDown={(e) => onNodePointerDown(e, n, i)}
               onPointerMove={onNodePointerMove}
               onPointerUp={() => onNodePointerUp(n)}
+              onPointerCancel={onNodePointerCancel}
               onPortPointerDown={(e) => onPortPointerDown(e, n.instanceId)}
               onPortPointerMove={onPortPointerMove}
               onPortPointerUp={onPortPointerUp}
@@ -247,6 +256,7 @@ function CanvasNode({
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  onPointerCancel,
   onPortPointerDown,
   onPortPointerMove,
   onPortPointerUp,
@@ -260,12 +270,15 @@ function CanvasNode({
   onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPointerUp: () => void;
+  onPointerCancel: () => void;
   onPortPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPortPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPortPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPortCancel: () => void;
 }) {
-  const metrics = useInstanceMetrics(node.instanceId);
+  // A canvas dot only needs a coarse, infrequent status -- the open inspector's Metrics tab already
+  // polls the same endpoint every 5s for live detail, so this doesn't need to match that cadence.
+  const metrics = useInstanceMetrics(node.instanceId, 15000);
   const status = metrics.data?.status ?? "unknown";
 
   let classes = "node";
@@ -280,7 +293,7 @@ function CanvasNode({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       <div className="node-top">
         <span className="node-name">

@@ -3,11 +3,14 @@ import { api, type MetricsSnapshot } from "../api";
 
 const POLL_MS = 5000;
 
-export function useInstanceMetrics(instanceId: string) {
+// `intervalMs` lets a caller that only needs a coarse status (e.g. a canvas dot, polled once per
+// node) back off from the 5s cadence the open inspector's live metrics view uses, so the request
+// volume doesn't scale linearly with how many services a project has.
+export function useInstanceMetrics(instanceId: string, intervalMs: number = POLL_MS) {
   return useQuery({
     queryKey: ["metrics", instanceId],
     queryFn: () => api<MetricsSnapshot>(`/services/${instanceId}/metrics`),
-    refetchInterval: POLL_MS,
+    refetchInterval: intervalMs,
   });
 }
 

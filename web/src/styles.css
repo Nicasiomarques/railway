@@ -208,7 +208,7 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
   padding: 10px 12px;
 }
 .row:hover { border-color: var(--border-strong); background: var(--panel-hover); }
-.row.selected { border-color: var(--accent); background: var(--accent-bg); }
+.row.selected, .row.active { border-color: var(--accent); background: var(--accent-bg); }
 
 .pill, .chip { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
 .pill { margin-left: 6px; }
