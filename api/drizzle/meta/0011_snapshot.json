@@ -1,6 +1,6 @@
 {
-  "id": "b0648178-15b7-4db0-9120-99171ea260a4",
-  "prevId": "bfcfcb62-353a-4f2b-b569-253ccba94bbd",
+  "id": "cf1ef18e-d223-48da-ab29-836f1ea11de8",
+  "prevId": "f57a1337-41c7-40e6-9376-7c39055294e7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1199,262 +1199,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invoice_line_items": {
-      "name": "invoice_line_items",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "invoice_id": {
-          "name": "invoice_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "replica_minutes": {
-          "name": "replica_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount_cents": {
-          "name": "amount_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "invoice_line_items_invoice_idx": {
-          "name": "invoice_line_items_invoice_idx",
-          "columns": [
-            {
-              "expression": "invoice_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "invoice_line_items_invoice_id_invoices_id_fk": {
-          "name": "invoice_line_items_invoice_id_invoices_id_fk",
-          "tableFrom": "invoice_line_items",
-          "tableTo": "invoices",
-          "columnsFrom": [
-            "invoice_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "invoice_line_items_project_id_projects_id_fk": {
-          "name": "invoice_line_items_project_id_projects_id_fk",
-          "tableFrom": "invoice_line_items",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.invoices": {
-      "name": "invoices",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "plan_id": {
-          "name": "plan_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_start": {
-          "name": "period_start",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "period_end": {
-          "name": "period_end",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "invoice_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "total_cents": {
-          "name": "total_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "currency": {
-          "name": "currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'usd'"
-        },
-        "finalized_at": {
-          "name": "finalized_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "invoices_org_period_idx": {
-          "name": "invoices_org_period_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "period_start",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "period_end",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "invoices_org_idx": {
-          "name": "invoices_org_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "invoices_organization_id_organizations_id_fk": {
-          "name": "invoices_organization_id_organizations_id_fk",
-          "tableFrom": "invoices",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "invoices_plan_id_plans_id_fk": {
-          "name": "invoices_plan_id_plans_id_fk",
-          "tableFrom": "invoices",
-          "tableTo": "plans",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.memberships": {
       "name": "memberships",
       "schema": "",
@@ -1536,80 +1280,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.organization_subscriptions": {
-      "name": "organization_subscriptions",
-      "schema": "",
-      "columns": {
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "plan_id": {
-          "name": "plan_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "subscription_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "organization_subscriptions_organization_id_organizations_id_fk": {
-          "name": "organization_subscriptions_organization_id_organizations_id_fk",
-          "tableFrom": "organization_subscriptions",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "organization_subscriptions_plan_id_plans_id_fk": {
-          "name": "organization_subscriptions_plan_id_plans_id_fk",
-          "tableFrom": "organization_subscriptions",
-          "tableTo": "plans",
-          "columnsFrom": [
-            "plan_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.organizations": {
       "name": "organizations",
       "schema": "",
@@ -1678,81 +1348,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.plans": {
-      "name": "plans",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "slug": {
-          "name": "slug",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "price_per_replica_minute_cents": {
-          "name": "price_per_replica_minute_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "included_replica_minutes": {
-          "name": "included_replica_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "plans_slug_idx": {
-          "name": "plans_slug_idx",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.projects": {
       "name": "projects",
       "schema": "",
@@ -1781,6 +1376,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "canvas_layout": {
+          "name": "canvas_layout",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         },
         "created_at": {
           "name": "created_at",
@@ -1882,37 +1484,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
-        },
-        "autoscaling_enabled": {
-          "name": "autoscaling_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "min_replicas": {
-          "name": "min_replicas",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "max_replicas": {
-          "name": "max_replicas",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "target_cpu_percent": {
-          "name": "target_cpu_percent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cpu_request_millicores": {
-          "name": "cpu_request_millicores",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "health_check": {
           "name": "health_check",
@@ -2844,14 +2415,6 @@
         "custom"
       ]
     },
-    "public.invoice_status": {
-      "name": "invoice_status",
-      "schema": "public",
-      "values": [
-        "draft",
-        "finalized"
-      ]
-    },
     "public.membership_role": {
       "name": "membership_role",
       "schema": "public",
@@ -2870,15 +2433,8 @@
         "image",
         "template",
         "postgres_template",
-        "redis_template"
-      ]
-    },
-    "public.subscription_status": {
-      "name": "subscription_status",
-      "schema": "public",
-      "values": [
-        "active",
-        "canceled"
+        "redis_template",
+        "minio_template"
       ]
     },
     "public.variable_scope": {

@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { ProjectSchema, paginated } from "../openapi/schemas.js";
-import { requireMembership } from "../access.js";
+import { CanvasLayoutSchema, ProjectSchema, paginated } from "../openapi/schemas.js";
+import { requireMembership, requireProjectAccess } from "../access.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
 import { assertProjectQuota } from "../quota.js";
@@ -11,6 +11,8 @@ import { slugify } from "../slug.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, environments, projects, regions } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
+
+export const projectParams = z.object({ projectId: z.string().uuid() });
 
 export const createProjectBody = z.object({
   organizationId: z.string().uuid(),
@@ -29,6 +31,10 @@ export const listProjectsQuery = z.object({
   organizationId: z.string().uuid(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
+});
+
+export const updateCanvasLayoutBody = z.object({
+  layout: z.record(z.string().uuid(), z.object({ x: z.number(), y: z.number() })),
 });
 
 export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
@@ -152,5 +158,64 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
     const nextCursor = hasMore && last ? encodeCursor({ t: last.createdAt.toISOString(), id: last.id }) : null;
 
     return { data, nextCursor };
+  });
+
+  app.get(
+    "/projects/:projectId/canvas-layout",
+    {
+      config: {
+        openapi: {
+          operationId: "getCanvasLayout",
+          tags: ["Projects"],
+          summary: "Gets the saved node positions for the project's service canvas",
+          pathSchema: projectParams,
+          success: { status: 200, description: "Canvas layout", schema: CanvasLayoutSchema },
+          errors: [404],
+        },
+      },
+    },
+    async (request) => {
+    const { projectId } = projectParams.parse(request.params);
+    await requireProjectAccess(db, request.auth!.userId, projectId);
+
+    const [row] = await db
+      .select({ canvasLayout: projects.canvasLayout })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
+      .limit(1);
+    if (!row) throw new ApiError(404, "project_not_found", "Project not found.");
+
+    return { layout: row.canvasLayout };
+  });
+
+  app.patch(
+    "/projects/:projectId/canvas-layout",
+    {
+      config: {
+        openapi: {
+          operationId: "updateCanvasLayout",
+          tags: ["Projects"],
+          summary: "Replaces the saved node positions for the project's service canvas",
+          pathSchema: projectParams,
+          bodySchema: updateCanvasLayoutBody,
+          success: { status: 200, description: "Canvas layout updated", schema: CanvasLayoutSchema },
+          errors: [403, 404],
+        },
+      },
+    },
+    async (request) => {
+    const { projectId } = projectParams.parse(request.params);
+    const body = updateCanvasLayoutBody.parse(request.body);
+    const userId = request.auth!.userId;
+    await requireProjectAccess(db, userId, projectId, { write: true });
+
+    const [row] = await db
+      .update(projects)
+      .set({ canvasLayout: body.layout })
+      .where(and(eq(projects.id, projectId), isNull(projects.deletedAt)))
+      .returning({ canvasLayout: projects.canvasLayout });
+    if (!row) throw new ApiError(404, "project_not_found", "Project not found.");
+
+    return { layout: row.canvasLayout };
   });
 };

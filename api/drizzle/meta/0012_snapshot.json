@@ -1,6 +1,6 @@
 {
-  "id": "0e5bc742-7d57-4edf-86cf-d7c9bf7b026c",
-  "prevId": "b0648178-15b7-4db0-9120-99171ea260a4",
+  "id": "ece742c3-563c-4ac1-8731-70aa90146e74",
+  "prevId": "cf1ef18e-d223-48da-ab29-836f1ea11de8",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1789,6 +1789,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "canvas_layout": {
+          "name": "canvas_layout",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2958,7 +2965,8 @@
         "image",
         "template",
         "postgres_template",
-        "redis_template"
+        "redis_template",
+        "minio_template"
       ]
     },
     "public.subscription_status": {

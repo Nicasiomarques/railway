@@ -75,22 +75,22 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1791094257693,
-      "tag": "0010_billing",
+      "when": 1791094439615,
+      "tag": "0010_canvas_layout",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
-      "when": 1791094997930,
-      "tag": "0011_autoscaling",
+      "when": 1791094987510,
+      "tag": "0011_minio_template_source",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "7",
-      "when": 1791095461681,
-      "tag": "0012_regions",
+      "when": 1791096645749,
+      "tag": "0012_phase4_billing_autoscaling_regions",
       "breakpoints": true
     }
   ]
