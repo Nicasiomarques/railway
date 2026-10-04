@@ -107,6 +107,29 @@ export const RUN_BACKUP_JOB_RETRY = {
   removeOnFail: 100,
 } as const;
 
+// Restoring a volume from its most recent backup (architecture.md §6: "restore is an explicit,
+// audited operation" — never automatic, so there's no tick/schedule for this one, unlike
+// RUN_BACKUP_JOB above). Same queue as backups: a restore is still a backup-subsystem operation.
+export const RESTORE_BACKUP_JOB = "restore-backup";
+
+export interface RestoreBackupJobData {
+  volumeId: string;
+}
+
+// One job per volume per enqueue call, same reasoning as runBackupJobId.
+export function restoreBackupJobId(data: RestoreBackupJobData): string {
+  return `restore-backup-${data.volumeId}`;
+}
+
+// Same budget as RUN_BACKUP_JOB_RETRY: a restore attempt either completes or fails, and retries
+// only cover a transient failure (storage momentarily unreachable).
+export const RESTORE_BACKUP_JOB_RETRY = {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
 // Internal "tick" job name used to wire a daily schedule to the backup queue (see
 // workers/src/backup/worker.ts: scheduleDailyBackups/createBackupWorker). Not part of the
 // API/worker job contract in the same sense as RUN_BACKUP_JOB: nothing produces this job today

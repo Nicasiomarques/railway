@@ -50,10 +50,13 @@ See `architecture.md` for the technical design.
 
 ## Phase 3 — Hardening (3–4 weeks)
 
-- Isolation tests: build escape, metadata access, secrets leakage.
-- Quotas, rate limiting, abuse prevention.
-- Backup restore testing; incident runbooks.
-- Platform observability and SLOs.
+- Isolation tests: build escape, metadata access, secrets leakage. First slice: NetworkPolicy/
+  quota/Pod-Security tests against a real cluster in CI (`.github/workflows/ci.yml`'s `isolation`
+  job) — build-sandbox tests (registry + gVisor) still run locally only.
+- Quotas, rate limiting, abuse prevention. Implemented: `api/src/quota.ts`, `@fastify/rate-limit`.
+- Backup restore testing; incident runbooks. Restore is now a real, audited operation
+  (`POST /v1/volumes/{volumeId}/restore`), tested against both outcomes. Runbooks: `docs/runbooks/`.
+- Platform observability and SLOs. First slice: `GET /metrics` on both processes — see `docs/slos.md`.
 - LGPD and terms review.
 
 ## Phase 4 — Product (ongoing)
