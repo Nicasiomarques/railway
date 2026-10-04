@@ -7,6 +7,7 @@ const HOSTNAME_PATTERN = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!
 
 export function DomainsPanel({ instanceId, canWrite }: { instanceId: string; canWrite: boolean }) {
   const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<{ type: "auto" | "custom"; hostname: string }>({ type: "auto", hostname: "" });
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +28,7 @@ export function DomainsPanel({ instanceId, canWrite }: { instanceId: string; can
             : { type: "auto" },
       });
       setForm({ type: "auto", hostname: "" });
+      setAdding(false);
       queryClient.invalidateQueries({ queryKey: ["domains", instanceId] });
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error creating domain.");
@@ -53,27 +55,14 @@ export function DomainsPanel({ instanceId, canWrite }: { instanceId: string; can
         <h3>Domains</h3>
       </div>
 
-      {canWrite && (
-        <form className="inline wrap" onSubmit={create}>
-          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as "auto" | "custom" })}>
-            <option value="auto">auto</option>
-            <option value="custom">custom</option>
-          </select>
-          {form.type === "custom" && (
-            <input
-              value={form.hostname}
-              onChange={(e) => setForm({ ...form, hostname: e.target.value })}
-              placeholder="app.example.com"
-              aria-label="hostname"
-            />
-          )}
-          <button type="submit" disabled={!canSubmit}>
-            Add domain
-          </button>
-        </form>
-      )}
       {error && <p className="error">{error}</p>}
 
+      {list.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 38 }} />
+          <li className="skeleton" style={{ height: 38 }} />
+        </ul>
+      )}
       <ul className="list">
         {list.data?.map((d) => (
           <li key={d.id} className="card-row">
@@ -93,6 +82,38 @@ export function DomainsPanel({ instanceId, canWrite }: { instanceId: string; can
         ))}
         {list.data?.length === 0 && <li className="muted">No domains yet.</li>}
       </ul>
+
+      {canWrite && (
+        <div className="disclose">
+          {!adding ? (
+            <button className="disclose-trigger" onClick={() => setAdding(true)}>
+              + Add domain
+            </button>
+          ) : (
+            <form className="disclose-body inline wrap" onSubmit={create}>
+              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as "auto" | "custom" })}>
+                <option value="auto">auto</option>
+                <option value="custom">custom</option>
+              </select>
+              {form.type === "custom" && (
+                <input
+                  value={form.hostname}
+                  onChange={(e) => setForm({ ...form, hostname: e.target.value })}
+                  placeholder="app.example.com"
+                  aria-label="hostname"
+                  autoFocus
+                />
+              )}
+              <button type="submit" disabled={!canSubmit}>
+                Add domain
+              </button>
+              <button type="button" className="ghost" onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </section>
   );
 }
