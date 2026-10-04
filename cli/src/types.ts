@@ -19,7 +19,8 @@ export type Environment = {
   id: string;
   projectId: string;
   name: string;
-  type: "production" | "staging" | "preview" | "custom";
+  type: "production" | "staging" | "preview" | "custom" | "ci";
+  ttlAt: string | null;
 };
 
 export type ServiceInstanceSummary = {

@@ -29,3 +29,13 @@ export function resolveInstanceId(ctx: Context, override?: string): string {
   }
   return instanceId;
 }
+
+export function resolveProjectId(ctx: Context, override?: string): string {
+  const projectId = override ?? ctx.project?.projectId;
+  if (!projectId) {
+    throw new Error(
+      "No project configured. Run `railway-like init` in the project directory, or use --project <id>.",
+    );
+  }
+  return projectId;
+}

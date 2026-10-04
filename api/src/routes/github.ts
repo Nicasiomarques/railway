@@ -129,7 +129,11 @@ function previewEnvName(prNumber: number): string {
 // override"). Decision: fall back to Production when the project has no Staging environment yet
 // (every project is created with a Production environment — see routes/projects.ts — but Staging
 // is optional today), rather than leaving the preview parentless.
-async function resolvePreviewParent(tx: Tx, projectId: string): Promise<{ id: string } | null> {
+//
+// Exported: api/src/routes/environments.ts reuses the same fallback for an ephemeral CI
+// environment's parent (roadmap.md Phase 5) -- a CI environment inherits variables exactly like a
+// PR preview does, it's just created directly through the API instead of by the GitHub webhook.
+export async function resolvePreviewParent(tx: Tx, projectId: string): Promise<{ id: string } | null> {
   const [staging] = await tx
     .select({ id: environments.id })
     .from(environments)

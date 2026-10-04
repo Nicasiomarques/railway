@@ -24,7 +24,9 @@ const softDelete = {
 };
 
 export const membershipRole = pgEnum("membership_role", ["owner", "admin", "member", "viewer"]);
-export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom"]);
+// "ci": ephemeral environment created directly for a CI job (roadmap.md Phase 5), as opposed to
+// "preview", which is only ever created by the GitHub PR webhook flow (api/src/routes/github.ts).
+export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom", "ci"]);
 export const serviceSource = pgEnum("service_source", [
   "github_repo",
   "image",

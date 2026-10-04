@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { ciEnvCreateCommand, ciEnvDestroyCommand } from "./commands/ci-env.js";
 import { deployCommand } from "./commands/deploy.js";
 import { domainAddCommand, domainListCommand, domainRemoveCommand } from "./commands/domain.js";
 import { envListCommand, envSetCommand, envUnsetCommand } from "./commands/env.js";
@@ -86,6 +87,25 @@ env
   .argument("<key>")
   .option("--instance <id>", "Service instance ID (overrides the project config)")
   .action(wrap((key: string, opts: { instance?: string }) => envUnsetCommand(key, opts)));
+
+const ciEnv = program.command("ci-env").description("Creates and tears down ephemeral environments for CI jobs");
+
+ciEnv
+  .command("create")
+  .description("Creates an ephemeral environment, torn down automatically after --ttl seconds")
+  .option("--project <id>", "Project ID (overrides the project config)")
+  .option("--name <name>", "Environment name (generated if omitted)")
+  .option("--ttl <seconds>", "Seconds until automatic teardown (default 600)")
+  .action(
+    wrap((opts: { project?: string; name?: string; ttl?: string }) => ciEnvCreateCommand(opts)),
+  );
+
+ciEnv
+  .command("destroy")
+  .description("Tears down an ephemeral environment immediately, instead of waiting for its TTL")
+  .argument("<environmentId>", "ID of the environment to tear down")
+  .option("--project <id>", "Project ID (overrides the project config)")
+  .action(wrap((environmentId: string, opts: { project?: string }) => ciEnvDestroyCommand(environmentId, opts)));
 
 const domain = program.command("domain").description("Manages the configured service's domains");
 

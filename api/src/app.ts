@@ -25,7 +25,7 @@ import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { githubRoutes } from "./routes/github.js";
-import type { BackupQueue, DeploymentQueue, DomainQueue, WebhookQueue } from "./queue.js";
+import type { BackupQueue, DeploymentQueue, DomainQueue, EnvironmentQueue, WebhookQueue } from "./queue.js";
 import type { GitHubChecksClient, GitHubInstallationTokenClient, GitHubPrCommentClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
 import { registerMetrics } from "./metrics.js";
@@ -39,6 +39,7 @@ export function buildApp(
     domainQueue?: DomainQueue;
     backupQueue?: BackupQueue;
     webhookQueue?: WebhookQueue;
+    environmentQueue?: EnvironmentQueue;
     baseDomain?: string;
     githubWebhookSecret?: string;
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
@@ -92,7 +93,7 @@ export function buildApp(
       await v1.register(usageRoutes, { db });
       await v1.register(billingRoutes, { db });
       await v1.register(projectRoutes, { db });
-      await v1.register(environmentRoutes, { db });
+      await v1.register(environmentRoutes, { db, environmentQueue: opts.environmentQueue });
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
       await v1.register(autoscalingRoutes, { db });

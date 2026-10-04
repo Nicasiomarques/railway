@@ -67,7 +67,7 @@ export const EnvironmentSchema = z.object({
   id: uuid,
   projectId: uuid,
   name: z.string(),
-  type: z.enum(["production", "staging", "preview", "custom"]),
+  type: z.enum(["production", "staging", "preview", "custom", "ci"]),
   parentEnvironmentId: uuid.nullable(),
   branchRule: z.string().nullable(),
   ttlAt: timestamp.nullable(),

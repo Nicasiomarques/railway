@@ -55,6 +55,8 @@ describe("OpenAPI contract", () => {
         "patch /v1/projects/{projectId}/canvas-layout",
         "get /v1/projects/{projectId}/connections",
         "get /v1/projects/{projectId}/environments",
+        "post /v1/projects/{projectId}/environments/ci",
+        "delete /v1/projects/{projectId}/environments/{environmentId}",
         "get /v1/projects/{projectId}/services",
         "get /v1/services/{instanceId}/env",
         "get /v1/services/{instanceId}/variables",
