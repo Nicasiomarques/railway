@@ -204,6 +204,19 @@ export const AuditLogSchema = z.object({
   createdAt: timestamp,
 });
 
+// Usage aggregated from usage_events (architecture.md §3, §4), by project and, when the sample
+// carried one, by service instance. serviceInstanceId/serviceName are null for a project-level
+// row (a usage_events row with no serviceInstanceId). totalReplicaMinutes sums the "replica_minutes"
+// metric only — the one metric the usage worker writes today.
+export const UsageSummaryItemSchema = z.object({
+  projectId: uuid,
+  projectName: z.string(),
+  serviceInstanceId: uuid.nullable(),
+  serviceName: z.string().nullable(),
+  totalReplicaMinutes: z.number(),
+  sampleCount: z.number().int(),
+});
+
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
 // `from`/`to`/`metric` stay documented on the query so the contract already foresees that future.
 export const MetricsSnapshotSchema = z.object({

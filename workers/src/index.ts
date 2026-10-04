@@ -14,6 +14,8 @@ import { InMemoryBackupProvider } from "./backup/in-memory.js";
 import { PostgresBackupStore } from "./backup/postgres-store.js";
 import { createBackupWorker } from "./backup/worker.js";
 import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
+import { PostgresUsageStore } from "./usage/postgres-store.js";
+import { createUsageWorker } from "./usage/worker.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -85,12 +87,22 @@ const backupWorker = createBackupWorker(connection, {
   provider: new InMemoryBackupProvider(new LocalFsObjectStorageProvider()),
 });
 
+// Usage aggregator (architecture.md §3, §4): samples each instance's runtime state into
+// usage_events. The same runtime as the reconciler, read-only here. No sampling schedule is wired
+// here yet either — see workers/src/usage/worker.ts (scheduleUsageSampling) for how that would be
+// connected.
+const usageWorker = createUsageWorker(connection, {
+  store: new PostgresUsageStore(db),
+  runtime,
+});
+
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
   await worker.close();
   await domainWorker.close();
   await backupWorker.close();
+  await usageWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);
