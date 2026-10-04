@@ -157,7 +157,7 @@ label.checkbox { flex-direction: row; align-items: center; gap: 6px; font-size: 
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 14px 28px;
   border-bottom: 1px solid var(--border);
   gap: 12px;
@@ -221,6 +221,7 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
 /* ---------- Status ---------- */
 .status { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border); font-weight: 600; letter-spacing: 0.01em; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: var(--faint); flex: none; }
+.kind-icon { flex: none; opacity: 0.75; }
 .status-Running, .status-running { color: var(--success); border-color: var(--success); background: var(--success-bg); }
 .status-Failed, .status-failed { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
 .status-Queued, .status-Building, .status-Deploying, .status-HealthChecking { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
@@ -322,7 +323,10 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
 .inspector-head-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .inspector-title { display: flex; flex-direction: column; gap: 4px; }
 .inspector-title strong { font-size: 15px; }
-.inspector-tabs { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 2px; }
+/* flex-wrap, not horizontal scroll: with 6 tabs, a hidden scroll-to-see-more affordance meant the
+   Settings tab was invisible unless the user knew to scroll the strip sideways. Wrapping to a
+   second row keeps every tab always visible. */
+.inspector-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
 .inspector-tab {
   background: transparent;
   border: none;
@@ -370,7 +374,8 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
 .build-logs pre { background: var(--bg); color: #d8dee9; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
 
 /* ---------- Usage ---------- */
-.usage { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 18px; }
+/* Standalone top-level page (reached from the sidebar), so no leading divider/margin like a
+   section stacked under something else would need. */
 .usage-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13.5px; }
 .usage-table th, .usage-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 .usage-table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
@@ -400,7 +405,7 @@ pre.terminal { background: var(--bg); color: #d8dee9; border: 1px solid var(--bo
 .settings .card-row { align-items: center; }
 
 /* ---------- Audit log ---------- */
-.audit-log { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 18px; }
+/* Standalone top-level page (reached from the sidebar); see the same note on .usage above. */
 .audit-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
 .audit-table th { text-align: left; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .audit-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
@@ -450,8 +455,32 @@ pre.terminal { background: var(--bg); color: #d8dee9; border: 1px solid var(--bo
 .skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-hover) 37%, var(--panel) 63%); background-size: 400% 100%; animation: shimmer 1.4s ease infinite; border-radius: var(--radius-sm); }
 @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
+.mobile-menu-btn { display: none; }
+.sidebar-close { display: none; }
+.sidebar-overlay { display: none; }
+
 @media (max-width: 860px) {
-  .sidebar { display: none; }
+  .mobile-menu-btn { display: inline-flex; }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 101;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 180ms ease;
+    box-shadow: var(--shadow);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-close { display: inline-flex; margin-left: auto; }
+  .brand { justify-content: space-between; }
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 100;
+    animation: fade-in 120ms ease;
+  }
   .inspector { width: 100vw; }
   main { padding: 18px; }
 }

@@ -20,12 +20,14 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const [project, setProject] = useState<{ id: string; name: string } | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => getStoredTheme());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const selectedOrg = orgs.data?.find((o) => o.id === orgId) ?? orgs.data?.[0];
 
   function goTo(next: NavView) {
     setView(next);
     setProject(null);
+    setMobileNavOpen(false);
   }
 
   function toggleTheme() {
@@ -36,10 +38,14 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
+      {mobileNavOpen && <div className="sidebar-overlay" onClick={() => setMobileNavOpen(false)} />}
+      <aside className={mobileNavOpen ? "sidebar open" : "sidebar"}>
         <div className="brand">
           <span className="brand-dot" />
           railway_like
+          <button className="ghost icon sidebar-close" onClick={() => setMobileNavOpen(false)} aria-label="Close menu">
+            ✕
+          </button>
         </div>
 
         {orgs.data && orgs.data.length > 1 && (
@@ -100,6 +106,9 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
 
       <div className="content">
         <div className="topbar">
+          <button className="ghost icon mobile-menu-btn" onClick={() => setMobileNavOpen(true)} aria-label="Open menu">
+            ☰
+          </button>
           <div className="breadcrumb">
             {project ? (
               <>
@@ -129,7 +138,6 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               projectId={project.id}
               projectName={project.name}
               canWrite={selectedOrg.role !== "viewer"}
-              onBack={() => setProject(null)}
             />
           )}
         </main>

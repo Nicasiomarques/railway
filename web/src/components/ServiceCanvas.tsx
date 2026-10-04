@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasLayout, Connection, Service } from "../api";
 import { useInstanceMetrics } from "./MetricsPanel";
+import { ServiceKindIcon } from "./ServiceKindIcon";
 
 type Pos = { x: number; y: number };
 
@@ -298,6 +299,7 @@ function CanvasNode({
       <div className="node-top">
         <span className="node-name">
           <span className={`status-dot dot-${status}`} title={status} />
+          <ServiceKindIcon kind={node.kind} className="kind-icon" />
           {node.name}
         </span>
       </div>

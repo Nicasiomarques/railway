@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type MetricsSnapshot } from "../api";
+import { api, ApiProblem, type MetricsSnapshot } from "../api";
 
 const POLL_MS = 5000;
 
@@ -10,7 +10,9 @@ export function useInstanceMetrics(instanceId: string, intervalMs: number = POLL
   return useQuery({
     queryKey: ["metrics", instanceId],
     queryFn: () => api<MetricsSnapshot>(`/services/${instanceId}/metrics`),
-    refetchInterval: intervalMs,
+    // Stop polling an endpoint that's already failing (e.g. no cluster backing this environment)
+    // instead of hammering it every few seconds forever.
+    refetchInterval: (query) => (query.state.error ? false : intervalMs),
   });
 }
 
@@ -23,6 +25,15 @@ export function MetricsPanel({ instanceId }: { instanceId: string }) {
         <h3>Metrics</h3>
       </div>
       {metrics.isLoading && <p className="muted">Loading…</p>}
+      {metrics.isError && (
+        <p className="muted">
+          {metrics.error instanceof ApiProblem && metrics.error.status === 503
+            ? "Metrics aren't available in this environment (no cluster backing the workload)."
+            : metrics.error instanceof ApiProblem
+              ? metrics.error.message
+              : "Error loading metrics."}
+        </p>
+      )}
       {metrics.data && (
         <div className="metrics-grid">
           <div className="metric-tile">

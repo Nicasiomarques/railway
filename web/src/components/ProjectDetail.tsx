@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiProblem, type CanvasLayout, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
 import { ServiceInspector } from "./ServiceInspector";
+import { ServiceKindIcon } from "./ServiceKindIcon";
 
 const KINDS = ["web", "worker", "postgres", "redis", "object_storage"] as const;
 const SOURCES = ["github_repo", "image", "template", "minio_template"] as const;
@@ -13,12 +14,10 @@ export function ProjectDetail({
   projectId,
   projectName,
   canWrite,
-  onBack,
 }: {
   projectId: string;
   projectName: string;
   canWrite: boolean;
-  onBack: () => void;
 }) {
   const queryClient = useQueryClient();
   const [addingService, setAddingService] = useState(false);
@@ -107,9 +106,6 @@ export function ProjectDetail({
 
   return (
     <section>
-      <button className="ghost back" onClick={onBack}>
-        ← Projects
-      </button>
       <div className="section-head">
         <h2>{projectName}</h2>
         <div className="chips">
@@ -167,7 +163,10 @@ export function ProjectDetail({
                 }
               >
                 <span>
-                  <strong>{s.name}</strong> <span className="pill">{s.kind}</span>{" "}
+                  <strong>{s.name}</strong>{" "}
+                  <span className="pill">
+                    <ServiceKindIcon kind={s.kind} className="kind-icon" /> {s.kind}
+                  </span>{" "}
                   <span className="muted">{s.source}</span>
                 </span>
                 <span className="chips">
