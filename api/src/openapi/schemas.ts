@@ -159,6 +159,18 @@ export const VolumeSchema = z.object({
   updatedAt: timestamp,
 });
 
+// The secret is never included: once set, it's write-only (api/src/routes/webhooks.ts).
+export const WebhookSubscriptionSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  projectId: uuid.nullable(),
+  url: z.string(),
+  events: z.array(z.string()),
+  isActive: z.boolean(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
 export const paginated = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ data: z.array(item), nextCursor: z.string().nullable() });
 

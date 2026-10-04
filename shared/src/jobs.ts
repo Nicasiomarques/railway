@@ -115,3 +115,27 @@ export const DAILY_BACKUP_TICK_JOB = "daily-backup-tick";
 
 // Default daily schedule for `scheduleDailyBackups`: once a day at 03:00 UTC (low-traffic window).
 export const DAILY_BACKUP_CRON_DEFAULT = "0 3 * * *";
+
+// Outbound webhooks (roadmap.md Phase 5: "Webhooks and extensions"). Own queue: a delivery's
+// lifecycle has no relation to a domain's, a deployment's or a backup's. Unlike those queues,
+// there's no stable per-resource jobId here: each enqueue call is one independent delivery
+// attempt of one event to one subscription, and re-enqueuing the same (subscription, event)
+// pair later (e.g. another status change) must NOT be deduped against an earlier delivery.
+export const WEBHOOKS_QUEUE = "webhooks";
+export const DELIVER_WEBHOOK_JOB = "deliver-webhook";
+
+export interface DeliverWebhookJobData {
+  subscriptionId: string;
+  event: string;
+  payload: Record<string, unknown>;
+}
+
+// A flaky third-party endpoint shouldn't need a human to retry it: BullMQ owns the retry
+// (attempts/backoff on the job itself), same as the other queues; deliver.ts has no retry
+// logic of its own, it just throws on anything but a 2xx response.
+export const DELIVER_WEBHOOK_JOB_RETRY = {
+  attempts: 8,
+  backoff: { type: "exponential", delay: 3000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;

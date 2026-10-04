@@ -14,6 +14,8 @@ import { InMemoryBackupProvider } from "./backup/in-memory.js";
 import { PostgresBackupStore } from "./backup/postgres-store.js";
 import { createBackupWorker } from "./backup/worker.js";
 import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
+import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
+import { createWebhookWorker } from "./webhooks/worker.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -85,12 +87,20 @@ const backupWorker = createBackupWorker(connection, {
   provider: new InMemoryBackupProvider(new LocalFsObjectStorageProvider()),
 });
 
+// Outbound webhooks (roadmap.md Phase 5): delivery via Node's native fetch (FetchWebhookTransport,
+// the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
+// subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
+const webhookWorker = createWebhookWorker(connection, {
+  store: new PostgresWebhookStore(db),
+});
+
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
   await worker.close();
   await domainWorker.close();
   await backupWorker.close();
+  await webhookWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);

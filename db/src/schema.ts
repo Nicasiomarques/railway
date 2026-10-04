@@ -289,6 +289,52 @@ export const volumes = pgTable(
   (t) => [index("volumes_instance_idx").on(t.serviceInstanceId)],
 );
 
+// Outbound webhook subscriptions (roadmap.md Phase 5: "Webhooks and extensions"). The inverse of
+// github_webhook_deliveries/githubRoutes' HMAC check: here WE sign the payload with `secret` the
+// same way, for a third party to verify. `projectId` null means "every project in the organization".
+export const webhookSubscriptions = pgTable(
+  "webhook_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    url: text("url").notNull(),
+    // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts);
+    // never returned by the API once set (api/src/routes/webhooks.ts).
+    secret: text("secret").notNull(),
+    // Event types this subscription wants, e.g. ["deployment.status_changed"]. Not an enum: new
+    // event types are expected to be added later without a migration.
+    events: text("events").array().notNull().default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [
+    index("webhook_subscriptions_org_idx").on(t.organizationId),
+    index("webhook_subscriptions_project_idx").on(t.projectId),
+  ],
+);
+
+// Delivery attempts log (one row per attempt), in the spirit of audit_logs: lets an operator see
+// why a subscriber's endpoint isn't receiving events.
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => webhookSubscriptions.id),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    responseStatus: integer("response_status"),
+    attempt: integer("attempt").notNull().default(1),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("webhook_deliveries_subscription_idx").on(t.subscriptionId)],
+);
+
 export const connections = pgTable(
   "connections",
   {

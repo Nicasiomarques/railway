@@ -57,6 +57,13 @@
       "when": 1791070328290,
       "tag": "0007_open_gunslinger",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791072127000,
+      "tag": "0008_stormy_kabuki",
+      "breakpoints": true
     }
   ]
 }

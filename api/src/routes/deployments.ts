@@ -8,7 +8,7 @@ import { sealEnvSnapshot, type Keyring } from "../crypto/envelope.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
 import { resolveInstanceEnv } from "../env/resolve.js";
-import type { DeploymentQueue } from "../queue.js";
+import type { DeploymentQueue, WebhookQueue } from "../queue.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, buildLogs, deploymentEvents, deployments, envSnapshots, serviceInstances, services } from "../db/schema.js";
 import { BuildLogSchema, DeploymentDetailSchema, DeploymentSchema, MetricsSnapshotSchema, listOf } from "../openapi/schemas.js";
@@ -217,18 +217,45 @@ function toResponse(d: DeploymentRow) {
   };
 }
 
-export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; queue?: DeploymentQueue; runtime?: RuntimeReader }> = async (
-  app,
-  { db, keyring, queue, runtime },
-) => {
+export const deploymentRoutes: FastifyPluginAsync<{
+  db: Db;
+  keyring: Keyring;
+  queue?: DeploymentQueue;
+  runtime?: RuntimeReader;
+  webhookQueue?: WebhookQueue;
+}> = async (app, { db, keyring, queue, runtime, webhookQueue }) => {
+  // Best effort, same spirit as the cancel-build enqueue below: a subscriber's queue being down
+  // must never fail (or roll back) the deployment that triggered the notification.
+  function notifyWebhook(
+    organizationId: string,
+    projectId: string,
+    dep: Pick<DeploymentRow, "id" | "serviceInstanceId" | "versionNo" | "status">,
+  ): void {
+    webhookQueue
+      ?.enqueueWebhookDeliveries(organizationId, projectId, "deployment.status_changed", {
+        deploymentId: dep.id,
+        serviceInstanceId: dep.serviceInstanceId,
+        status: dep.status,
+        versionNo: dep.versionNo,
+      })
+      .catch((err) => {
+        app.log.warn({ err, deploymentId: dep.id }, "deployment.status_changed webhook not enqueued");
+      });
+  }
+
   // Shared by the manual-create and rollback routes: enqueues the reconciler job for a freshly
   // created Queued deployment, and if that fails, marks it Failed instead of leaving it stuck
   // forever (the worker will never see a job for it). Enqueuing after the commit is required: the
   // worker reads the row, so it must already be visible.
-  async function enqueueReconcileOrFail(dep: Pick<DeploymentRow, "id" | "serviceInstanceId" | "versionNo">): Promise<void> {
+  async function enqueueReconcileOrFail(
+    dep: Pick<DeploymentRow, "id" | "serviceInstanceId" | "versionNo">,
+    organizationId: string,
+    projectId: string,
+  ): Promise<void> {
     try {
       if (!queue) throw new Error("deployment queue not configured");
       await queue.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
+      notifyWebhook(organizationId, projectId, { ...dep, status: "Queued" });
     } catch {
       await db.transaction(async (tx) => {
         const updated = await tx
@@ -273,7 +300,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       const { instanceId } = instanceParams.parse(request.params);
       const body = createDeploymentBody.parse(request.body);
       const userId = request.auth!.userId;
-      const { organizationId } = await requireInstanceAccess(db, userId, instanceId, { write: true });
+      const { organizationId, projectId } = await requireInstanceAccess(db, userId, instanceId, { write: true });
 
       const [source] = await db
         .select({ source: services.source })
@@ -314,7 +341,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       // Enqueues after the commit: the worker needs to see the row. Retrying with the same Idempotency-Key
       // enqueues again; the jobId per version deduplicates, and the reconciler is idempotent.
       const dep = result.body as ReturnType<typeof toResponse>;
-      await enqueueReconcileOrFail(dep);
+      await enqueueReconcileOrFail(dep, organizationId, projectId);
 
       // Deletes the builds of the deployments this version superseded. Best effort: if it fails, the Job dies via timeout.
       for (const id of cancelledIds) {
@@ -450,6 +477,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       await queue?.enqueueCancelBuild({ deploymentId, serviceInstanceId: dep.serviceInstanceId }).catch((err) => {
         request.log.warn({ err, deploymentId }, "build cancellation not enqueued; the Job will expire via timeout");
       });
+      notifyWebhook(access.organizationId, access.projectId, { ...cancelled });
       return toResponse(cancelled);
     },
   );
@@ -528,7 +556,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
         return dep;
       });
 
-      await enqueueReconcileOrFail(created);
+      await enqueueReconcileOrFail(created, access.organizationId, access.projectId);
 
       // Deletes the builds of the deployments this version superseded. Best effort: if it fails, the Job dies via timeout.
       for (const id of cancelledIds) {
