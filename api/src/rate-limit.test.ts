@@ -73,19 +73,21 @@ describe("per-user rate limiting", () => {
 
 describe("login rate limiting", () => {
   it("limits POST /v1/auth/login by IP (no userId exists yet) with its own, tighter budget", async () => {
+    // No account exists for these emails, so each attempt is 401 — the rate limiter counts
+    // requests regardless of outcome, which is the point: it still kicks in before any user lookup.
     for (let i = 0; i < LOGIN_MAX; i++) {
       const res = await app.inject({
         method: "POST",
         url: "/v1/auth/login",
-        payload: { email: uniqueEmail("login-rl") },
+        payload: { email: uniqueEmail("login-rl"), password: "wrong-password" },
       });
-      expect(res.statusCode).toBe(200);
+      expect(res.statusCode).toBe(401);
     }
 
     const blocked = await app.inject({
       method: "POST",
       url: "/v1/auth/login",
-      payload: { email: uniqueEmail("login-rl") },
+      payload: { email: uniqueEmail("login-rl"), password: "wrong-password" },
     });
     expect(blocked.statusCode).toBe(429);
     expect(blocked.headers["content-type"]).toContain("application/problem+json");

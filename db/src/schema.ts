@@ -60,9 +60,13 @@ export const users = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     externalId: text("external_id").notNull(),
     email: text("email").notNull(),
+    // Null for a user who has never set a password (e.g. created by an older flow, or a future
+    // external-provider user). `POST /v1/auth/login` rejects login when this is null instead of
+    // treating a missing password as valid — see api/src/auth/local.ts.
+    passwordHash: text("password_hash"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("users_external_id_idx").on(t.externalId)],
+  (t) => [uniqueIndex("users_external_id_idx").on(t.externalId), uniqueIndex("users_email_idx").on(t.email)],
 );
 
 export const organizations = pgTable(
