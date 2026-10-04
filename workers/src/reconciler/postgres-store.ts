@@ -24,6 +24,11 @@ export class PostgresDeploymentStore implements DeploymentStore {
         environmentId: serviceInstances.environmentId,
         repoUrl: services.repoUrl,
         rootDir: services.rootDir,
+        autoscalingEnabled: serviceInstances.autoscalingEnabled,
+        minReplicas: serviceInstances.minReplicas,
+        maxReplicas: serviceInstances.maxReplicas,
+        targetCpuPercent: serviceInstances.targetCpuPercent,
+        cpuRequestMillicores: serviceInstances.cpuRequestMillicores,
       })
       .from(deployments)
       .innerJoin(serviceInstances, eq(serviceInstances.id, deployments.serviceInstanceId))
@@ -55,6 +60,19 @@ export class PostgresDeploymentStore implements DeploymentStore {
         throw err;
       }),
       replicas: row.replicas,
+      autoscaling:
+        row.autoscalingEnabled &&
+        row.minReplicas !== null &&
+        row.maxReplicas !== null &&
+        row.targetCpuPercent !== null &&
+        row.cpuRequestMillicores !== null
+          ? {
+              minReplicas: row.minReplicas,
+              maxReplicas: row.maxReplicas,
+              targetCpuPercent: row.targetCpuPercent,
+              cpuRequestMillicores: row.cpuRequestMillicores,
+            }
+          : null,
     };
   }
 

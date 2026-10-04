@@ -44,11 +44,85 @@ function runtimeWithPods(items: k8s.V1Pod[]): { runtime: K8sRuntime; listNamespa
   return { runtime: new K8sRuntime(kubeconfig), listNamespacedPod };
 }
 
+// Mocks only what `applyWorkload` touches, split by API class the way K8sRuntime's constructor
+// resolves them -- so a call lands on the fake the real client would have routed it to.
+// No real cluster; that's k8s.integration.test.ts's job.
+function runtimeForApply() {
+  const core = { patchNamespace: vi.fn().mockResolvedValue({}), patchNamespacedSecret: vi.fn().mockResolvedValue({}) };
+  const apps = { patchNamespacedDeployment: vi.fn().mockResolvedValue({}) };
+  const autoscalingApi = {
+    patchNamespacedHorizontalPodAutoscaler: vi.fn().mockResolvedValue({}),
+    deleteNamespacedHorizontalPodAutoscaler: vi.fn().mockResolvedValue({}),
+  };
+  const kubeconfig = {
+    makeApiClient: (apiClass: unknown) => {
+      if (apiClass === k8s.AppsV1Api) return apps;
+      if (apiClass === k8s.AutoscalingV2Api) return autoscalingApi;
+      return core;
+    },
+  } as unknown as k8s.KubeConfig;
+  return { runtime: new K8sRuntime(kubeconfig), core, apps, autoscalingApi };
+}
+
 async function collect(iter: AsyncIterable<string>): Promise<string[]> {
   const lines: string[] = [];
   for await (const line of iter) lines.push(line);
   return lines;
 }
+
+describe("K8sRuntime.applyWorkload autoscaling", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const BASE_SPEC = { name: "wl-1", namespace: "env-ns", image: "img@sha256:a", env: {}, replicas: 2 };
+
+  it("with no autoscaling policy, sets Deployment replicas directly and deletes any existing HPA", async () => {
+    const { runtime, apps, autoscalingApi } = runtimeForApply();
+
+    await runtime.applyWorkload(BASE_SPEC);
+
+    expect(apps.patchNamespacedDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ spec: expect.objectContaining({ replicas: 2 }) }) }),
+      expect.anything(),
+    );
+    expect(autoscalingApi.deleteNamespacedHorizontalPodAutoscaler).toHaveBeenCalledWith({ name: "wl-1", namespace: "env-ns" });
+    expect(autoscalingApi.patchNamespacedHorizontalPodAutoscaler).not.toHaveBeenCalled();
+  });
+
+  it("deleting a nonexistent HPA (404) is not an error", async () => {
+    const { runtime, autoscalingApi } = runtimeForApply();
+    autoscalingApi.deleteNamespacedHorizontalPodAutoscaler.mockRejectedValue({ statusCode: 404 });
+
+    await expect(runtime.applyWorkload(BASE_SPEC)).resolves.toBeUndefined();
+  });
+
+  it("with a policy, omits Deployment replicas, sets a CPU request, and applies an HPA", async () => {
+    const { runtime, apps, autoscalingApi } = runtimeForApply();
+    const spec = { ...BASE_SPEC, autoscaling: { minReplicas: 2, maxReplicas: 10, targetCpuPercent: 70, cpuRequestMillicores: 250 } };
+
+    await runtime.applyWorkload(spec);
+
+    const deploymentBody = apps.patchNamespacedDeployment.mock.calls[0][0].body;
+    expect(deploymentBody.spec.replicas).toBeUndefined();
+    expect(deploymentBody.spec.template.spec.containers[0].resources).toEqual({ requests: { cpu: "250m" } });
+
+    expect(autoscalingApi.deleteNamespacedHorizontalPodAutoscaler).not.toHaveBeenCalled();
+    expect(autoscalingApi.patchNamespacedHorizontalPodAutoscaler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "wl-1",
+        namespace: "env-ns",
+        body: expect.objectContaining({
+          spec: expect.objectContaining({
+            scaleTargetRef: { apiVersion: "apps/v1", kind: "Deployment", name: "wl-1" },
+            minReplicas: 2,
+            maxReplicas: 10,
+            metrics: [{ type: "Resource", resource: { name: "cpu", target: { type: "Utilization", averageUtilization: 70 } } }],
+          }),
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+});
 
 describe("K8sRuntime.tailLogs", () => {
   afterEach(() => vi.restoreAllMocks());

@@ -23,12 +23,14 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
   private readonly core: k8s.CoreV1Api;
   private readonly apps: k8s.AppsV1Api;
   private readonly net: k8s.NetworkingV1Api;
+  private readonly autoscaling: k8s.AutoscalingV2Api;
   private readonly logClient: k8s.Log;
 
   constructor(kubeconfig: k8s.KubeConfig) {
     this.core = kubeconfig.makeApiClient(k8s.CoreV1Api);
     this.apps = kubeconfig.makeApiClient(k8s.AppsV1Api);
     this.net = kubeconfig.makeApiClient(k8s.NetworkingV1Api);
+    this.autoscaling = kubeconfig.makeApiClient(k8s.AutoscalingV2Api);
     this.logClient = new k8s.Log(kubeconfig);
   }
 
@@ -53,6 +55,35 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
     );
     await this.apps.patchNamespacedDeployment(
       { name: spec.name, namespace: spec.namespace, body: deploymentObject(spec, hash, secretName), ...apply },
+      ssa,
+    );
+    await this.applyAutoscaler(spec);
+  }
+
+  // With a policy: upserts a HorizontalPodAutoscaler targeting this Deployment, server-side-applied
+  // under the same field manager as everything else here -- same pattern as applyWorkload itself.
+  // Without one: deletes any HPA left over from autoscaling having been turned off, so `spec.replicas`
+  // (set directly on the Deployment by deploymentObject below) takes back control, instead of a
+  // stale HPA re-scaling the workload on its own on its next reconcile loop.
+  private async applyAutoscaler(spec: WorkloadSpec): Promise<void> {
+    if (!spec.autoscaling) {
+      try {
+        await this.autoscaling.deleteNamespacedHorizontalPodAutoscaler({ name: spec.name, namespace: spec.namespace });
+      } catch (err) {
+        if (statusOf(err) !== 404) throw err;
+      }
+      return;
+    }
+
+    const ssa = k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.ServerSideApply);
+    await this.autoscaling.patchNamespacedHorizontalPodAutoscaler(
+      {
+        name: spec.name,
+        namespace: spec.namespace,
+        body: horizontalPodAutoscalerObject(spec, spec.autoscaling),
+        fieldManager: FIELD_MANAGER,
+        force: true,
+      },
       ssa,
     );
   }
@@ -179,7 +210,12 @@ function deploymentObject(spec: WorkloadSpec, hash: string, secretName: string):
     kind: "Deployment",
     metadata: { name: spec.name, namespace: spec.namespace, labels: { [LABEL_WORKLOAD]: spec.name } },
     spec: {
-      replicas: spec.replicas,
+      // With an autoscaling policy, `replicas` is left unset entirely (not even set to the current
+      // count) so this field manager stops owning it under server-side apply, and the
+      // HorizontalPodAutoscaler applied alongside it (applyAutoscaler) can own it instead -- setting
+      // it here on every applyWorkload call (e.g. a redeploy) would otherwise reset the HPA's scaling
+      // decision every time.
+      ...(spec.autoscaling ? {} : { replicas: spec.replicas }),
       // The selector is immutable in Kubernetes: it stays with just the workload name, without the hash.
       selector: { matchLabels: { [LABEL_WORKLOAD]: spec.name } },
       template: {
@@ -199,11 +235,35 @@ function deploymentObject(spec: WorkloadSpec, hash: string, secretName: string):
                 capabilities: { drop: ["ALL"] },
               },
               volumeMounts: [{ name: "tmp", mountPath: "/tmp" }],
+              // A CPU request is required for the HPA's utilization-percent target to mean anything
+              // (it's a percentage of this number); only set when autoscaling is actually on.
+              ...(spec.autoscaling
+                ? { resources: { requests: { cpu: `${spec.autoscaling.cpuRequestMillicores}m` } } }
+                : {}),
             },
           ],
           volumes: [{ name: "tmp", emptyDir: {} }],
         },
       },
+    },
+  };
+}
+
+function horizontalPodAutoscalerObject(spec: WorkloadSpec, policy: NonNullable<WorkloadSpec["autoscaling"]>): k8s.V2HorizontalPodAutoscaler {
+  return {
+    apiVersion: "autoscaling/v2",
+    kind: "HorizontalPodAutoscaler",
+    metadata: { name: spec.name, namespace: spec.namespace, labels: { [LABEL_WORKLOAD]: spec.name } },
+    spec: {
+      scaleTargetRef: { apiVersion: "apps/v1", kind: "Deployment", name: spec.name },
+      minReplicas: policy.minReplicas,
+      maxReplicas: policy.maxReplicas,
+      metrics: [
+        {
+          type: "Resource",
+          resource: { name: "cpu", target: { type: "Utilization", averageUtilization: policy.targetCpuPercent } },
+        },
+      ],
     },
   };
 }

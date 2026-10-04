@@ -276,6 +276,19 @@ export const InvoiceDetailSchema = InvoiceSchema.extend({
   lineItems: z.array(InvoiceLineItemSchema),
 });
 
+// Autoscaling (roadmap.md Phase 4). min/maxReplicas, targetCpuPercent and cpuRequestMillicores are
+// only non-null when enabled is true -- see service_instances in db/src/schema.ts.
+export const AutoscalingPolicySchema = z.object({
+  instanceId: uuid,
+  enabled: z.boolean(),
+  // The instance's fixed replica count; what's used directly when enabled is false.
+  replicas: z.number().int(),
+  minReplicas: z.number().int().nullable(),
+  maxReplicas: z.number().int().nullable(),
+  targetCpuPercent: z.number().int().nullable(),
+  cpuRequestMillicores: z.number().int().nullable(),
+});
+
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
 // `from`/`to`/`metric` stay documented on the query so the contract already foresees that future.
 export const MetricsSnapshotSchema = z.object({

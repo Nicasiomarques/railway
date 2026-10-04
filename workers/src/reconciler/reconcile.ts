@@ -169,10 +169,14 @@ function specFor(d: DeploymentRecord & { imageDigest: string }): WorkloadSpec {
     image: d.imageDigest,
     env: d.env,
     replicas: d.replicas,
+    ...(d.autoscaling ? { autoscaling: d.autoscaling } : {}),
   };
 }
 
 // Ready = this deployment's image has its replicas ready. A workload with the old image doesn't count.
+// With autoscaling on, the Deployment's replica count is the HPA's to decide (see k8s.ts), so the
+// floor to wait for here is the policy's minReplicas rather than the spec's own (unused) `replicas`.
 function isReady(status: WorkloadStatus | null, spec: WorkloadSpec): boolean {
-  return status !== null && status.image === spec.image && status.readyReplicas >= spec.replicas;
+  const wantReplicas = spec.autoscaling?.minReplicas ?? spec.replicas;
+  return status !== null && status.image === spec.image && status.readyReplicas >= wantReplicas;
 }

@@ -162,6 +162,16 @@ export const serviceInstances = pgTable(
       .references(() => environments.id),
     resources: jsonb("resources"),
     replicas: integer("replicas").notNull().default(1),
+    // Autoscaling (roadmap.md Phase 4). When false, `replicas` above is the instance's fixed count,
+    // same as today; the four columns below are only meaningful (and only ever non-null) when true
+    // -- see workers/src/runtime/adapter.ts's AutoscalingPolicy, which they're assembled into.
+    autoscalingEnabled: boolean("autoscaling_enabled").notNull().default(false),
+    minReplicas: integer("min_replicas"),
+    maxReplicas: integer("max_replicas"),
+    targetCpuPercent: integer("target_cpu_percent"),
+    // A CPU request, in millicores, is what makes targetCpuPercent (a percentage of it) meaningful
+    // to the Horizontal Pod Autoscaler -- see k8s.ts's deploymentObject.
+    cpuRequestMillicores: integer("cpu_request_millicores"),
     healthCheck: jsonb("health_check"),
     overrides: jsonb("overrides"),
     // Cron expression (e.g. "0 3 * * *"). Only relevant when the owning service's kind is "cron";

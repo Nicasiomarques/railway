@@ -18,6 +18,7 @@ import { volumeRoutes } from "./routes/volumes.js";
 import { usageRoutes } from "./routes/usage.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { billingRoutes } from "./routes/billing.js";
+import { autoscalingRoutes } from "./routes/autoscaling.js";
 import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
@@ -92,6 +93,7 @@ export function buildApp(
       await v1.register(environmentRoutes, { db });
       await v1.register(serviceRoutes, { db });
       await v1.register(connectionRoutes, { db });
+      await v1.register(autoscalingRoutes, { db });
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
       await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });

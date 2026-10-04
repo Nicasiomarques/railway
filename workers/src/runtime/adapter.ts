@@ -3,6 +3,19 @@ import { createHash } from "node:crypto";
 // Runtime port (architecture.md §3). Only the reconciler calls this interface.
 // Implementations: InMemoryRuntime (tests) and K8sRuntime (k3s).
 
+// Autoscaling (roadmap.md Phase 4). When present on a WorkloadSpec, the runtime is expected to
+// hand control of the workload's replica count to this policy instead of the spec's own
+// `replicas` field (see K8sRuntime.applyWorkload: with a policy, the Deployment's `spec.replicas`
+// is left unset so a HorizontalPodAutoscaler can own it without fighting every redeploy).
+export interface AutoscalingPolicy {
+  minReplicas: number;
+  maxReplicas: number;
+  targetCpuPercent: number;
+  // HPA computes CPU *utilization* as a percentage of the container's CPU request, so one has to
+  // exist for the target to mean anything -- this is that request, in millicores (e.g. 250 = "250m").
+  cpuRequestMillicores: number;
+}
+
 export interface WorkloadSpec {
   // Deterministic per instance, so the runtime finds the same workload on every call.
   name: string;
@@ -11,7 +24,11 @@ export interface WorkloadSpec {
   // Image by digest (`registry/app@sha256:...`), never by tag.
   image: string;
   env: Record<string, string>;
+  // Baseline/manual replica count. Ignored by the runtime (in favor of the policy) once
+  // `autoscaling` is set, but still required: it's what the workload reverts to when autoscaling
+  // is turned back off.
   replicas: number;
+  autoscaling?: AutoscalingPolicy;
 }
 
 export interface WorkloadRef {

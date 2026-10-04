@@ -1,4 +1,5 @@
 import type { DeploymentStatus } from "@railway-like/shared";
+import type { AutoscalingPolicy } from "../runtime/adapter.js";
 
 // What the reconciler needs from a deployment. Postgres is the source of truth (architecture.md §1).
 export interface DeploymentRecord {
@@ -15,6 +16,9 @@ export interface DeploymentRecord {
   rootDir: string;
   env: Record<string, string>;
   replicas: number;
+  // Read live from the instance at reconcile time, same as `replicas` above -- not frozen into the
+  // deployment. Null when the instance has autoscaling off, in which case `replicas` governs directly.
+  autoscaling: AutoscalingPolicy | null;
 }
 
 export interface DeploymentStore {

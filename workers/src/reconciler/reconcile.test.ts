@@ -24,6 +24,7 @@ function deployment(overrides: Partial<DeploymentRecord> & Pick<DeploymentRecord
     rootDir: "/",
     env: { PORT: "3000" },
     replicas: 1,
+    autoscaling: null,
     ...overrides,
   };
 }
@@ -108,6 +109,18 @@ describe("reconcileInstance", () => {
     expect(store.events.length).toBe(eventsAfterConverge);
   });
 
+  it("with autoscaling on, waits for the policy's minReplicas rather than the instance's own replicas", async () => {
+    const { deps, store, runtime } = setup();
+    const autoscaling = { minReplicas: 3, maxReplicas: 10, targetCpuPercent: 70, cpuRequestMillicores: 250 };
+    store.add(deployment({ id: "d1", status: "Deploying", replicas: 1, autoscaling }));
+
+    await reconcileInstance(deps, INSTANCE);
+    runtime.setReadyReplicas(workloadName(INSTANCE), 1); // below minReplicas: still not ready
+    expect((await reconcileInstance(deps, INSTANCE)).kind).toBe("pending");
+
+    runtime.setReadyReplicas(workloadName(INSTANCE), 3); // at minReplicas: ready
+    expect(await reconcileInstance(deps, INSTANCE)).toEqual({ kind: "converged", deploymentId: "d1" });
+  });
 });
 
 describe("handleReconcileJob (retries and final failure)", () => {

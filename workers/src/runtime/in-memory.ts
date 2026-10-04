@@ -74,6 +74,15 @@ export class InMemoryRuntime implements RuntimeAdapter, EnvironmentRuntime {
     if (!current) throw new Error(`workload ${name} does not exist`);
     current.readyReplicas = 0;
   }
+
+  // Like markReady, but to an explicit count rather than the spec's own `replicas` -- needed to
+  // simulate an autoscaled workload, where what the reconciler waits for is the autoscaling
+  // policy's minReplicas, not `replicas` (see reconcile.ts's isReady).
+  setReadyReplicas(name: string, count: number): void {
+    const current = this.workloads.get(name);
+    if (!current) throw new Error(`workload ${name} does not exist`);
+    current.readyReplicas = count;
+  }
 }
 
 function sameSpec(a: WorkloadSpec, b: WorkloadSpec): boolean {
