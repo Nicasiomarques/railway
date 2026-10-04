@@ -57,7 +57,8 @@ See `architecture.md` for the technical design.
 - Backup restore testing; incident runbooks. Restore is now a real, audited operation
   (`POST /v1/volumes/{volumeId}/restore`), tested against both outcomes. Runbooks: `docs/runbooks/`.
 - Platform observability and SLOs. First slice: `GET /metrics` on both processes — see `docs/slos.md`.
-- LGPD and terms review.
+- LGPD and terms review. First slice: `docs/lgpd-review.md` — a data inventory and gap review,
+  including a security finding (email-only login, no verification) ahead of anything else there.
 
 ## Phase 4 — Product (ongoing)
 
