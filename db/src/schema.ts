@@ -44,6 +44,12 @@ export const environmentProvisioningStatus = pgEnum("environment_provisioning_st
   "ready",
   "failed",
 ]);
+export const subscriptionStatus = pgEnum("subscription_status", ["active", "canceled"]);
+// "draft": created and line items populated by the billing worker; "finalized": closed, amounts
+// immutable from this point (architecture.md's usage_events are append-only, so a finalized invoice
+// is what makes a historical period's cost stable even as new usage_events keep arriving for the
+// current period).
+export const invoiceStatus = pgEnum("invoice_status", ["draft", "finalized"]);
 
 // Identity comes from an external provider; we only store the link.
 export const users = pgTable(
@@ -84,6 +90,26 @@ export const memberships = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.userId] })],
 );
 
+// Multi-region (roadmap.md Phase 4). Seeded by migration 0012 with one row carrying this fixed id,
+// so every project created before regions existed backfills to it (projects.regionId's default)
+// and single-cluster deployments need no region management at all -- see
+// workers/src/runtime/registry.ts for how a regionId becomes a RuntimeAdapter.
+export const DEFAULT_REGION_ID = "00000000-0000-0000-0000-000000000001";
+
+export const regions = pgTable(
+  "regions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    // The kubeconfig context this region's cluster runs on. Null means "whatever the kubeconfig's
+    // own current-context is" -- the single-cluster behavior from before this table existed.
+    kubeContext: text("kube_context"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("regions_slug_idx").on(t.slug)],
+);
+
 export const projects = pgTable(
   "projects",
   {
@@ -91,6 +117,10 @@ export const projects = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
+    regionId: uuid("region_id")
+      .notNull()
+      .default(DEFAULT_REGION_ID)
+      .references(() => regions.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     // Node positions for the service canvas, keyed by serviceId: { [serviceId]: { x, y } }.
@@ -160,6 +190,16 @@ export const serviceInstances = pgTable(
       .references(() => environments.id),
     resources: jsonb("resources"),
     replicas: integer("replicas").notNull().default(1),
+    // Autoscaling (roadmap.md Phase 4). When false, `replicas` above is the instance's fixed count,
+    // same as today; the four columns below are only meaningful (and only ever non-null) when true
+    // -- see workers/src/runtime/adapter.ts's AutoscalingPolicy, which they're assembled into.
+    autoscalingEnabled: boolean("autoscaling_enabled").notNull().default(false),
+    minReplicas: integer("min_replicas"),
+    maxReplicas: integer("max_replicas"),
+    targetCpuPercent: integer("target_cpu_percent"),
+    // A CPU request, in millicores, is what makes targetCpuPercent (a percentage of it) meaningful
+    // to the Horizontal Pod Autoscaler -- see k8s.ts's deploymentObject.
+    cpuRequestMillicores: integer("cpu_request_millicores"),
     healthCheck: jsonb("health_check"),
     overrides: jsonb("overrides"),
     // Cron expression (e.g. "0 3 * * *"). Only relevant when the owning service's kind is "cron";
@@ -397,6 +437,88 @@ export const usageEvents = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("usage_events_project_time_idx").on(t.projectId, t.occurredAt)],
+);
+
+// Billing (roadmap.md Phase 4: "Billing on top of usage_events"). Pricing tiers are reference data,
+// not user input: seeded by the migration that creates this table (api/drizzle), updated only by a
+// future migration, never through the API. pricePerReplicaMinuteCents and includedReplicaMinutes
+// are both scoped to the "replica_minutes" metric, the only one the usage worker writes today
+// (workers/src/usage/worker.ts); a plan covering another metric would need its own column, not a
+// generic schema, since the billing worker has to know how to combine them.
+export const plans = pgTable(
+  "plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    pricePerReplicaMinuteCents: integer("price_per_replica_minute_cents").notNull(),
+    includedReplicaMinutes: integer("included_replica_minutes").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("plans_slug_idx").on(t.slug)],
+);
+
+// One row per organization: an org with no row here has never picked a plan and isn't billed
+// (the billing worker skips it, same as an instance with no workload is skipped by the usage
+// worker). Unlike memberships (composite PK, many rows per org), a subscription is 1:1 with its
+// organization, so the organization_id itself is the primary key.
+export const organizationSubscriptions = pgTable("organization_subscriptions", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => organizations.id),
+  planId: uuid("plan_id")
+    .notNull()
+    .references(() => plans.id),
+  status: subscriptionStatus("status").notNull().default("active"),
+  ...timestamps,
+});
+
+// One invoice per organization per billed period. periodStart/periodEnd are the half-open range
+// [start, end) the billing worker summed usage_events over -- same convention as the usage API's
+// from/to (api/src/routes/usage.ts).
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => plans.id),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    status: invoiceStatus("status").notNull().default("draft"),
+    totalCents: integer("total_cents").notNull().default(0),
+    currency: text("currency").notNull().default("usd"),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    // The billing worker re-running for a period it already closed must update that invoice, not
+    // duplicate it (mirrors reconcileJobId/runBackupJobId: one unit of work, one stable identity).
+    uniqueIndex("invoices_org_period_idx").on(t.organizationId, t.periodStart, t.periodEnd),
+    index("invoices_org_idx").on(t.organizationId),
+  ],
+);
+
+// One line item per project per invoice (mirrors the per-project grouping in the usage API), so a
+// customer can see which project drove the charge. Append-only alongside its invoice: regenerating
+// an invoice (see the worker) replaces all of its line items in one transaction.
+export const invoiceLineItems = pgTable(
+  "invoice_line_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    description: text("description").notNull(),
+    replicaMinutes: integer("replica_minutes").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("invoice_line_items_invoice_idx").on(t.invoiceId)],
 );
 
 // Append-only.

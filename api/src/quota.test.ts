@@ -13,7 +13,7 @@ const app = buildApp(db, { keyring: testKeyring(), rateLimit: { max: 1000, windo
 
 beforeEach(async () => {
   const { rows } = await db.execute<{ tablename: string }>(
-    sql`select tablename from pg_tables where schemaname = 'public' and tablename <> '__drizzle_migrations'`,
+    sql`select tablename from pg_tables where schemaname = 'public' and tablename not in ('__drizzle_migrations', 'regions')`,
   );
   await db.execute(sql.raw(`truncate ${rows.map((r) => `"${r.tablename}"`).join(", ")} restart identity cascade`));
 });

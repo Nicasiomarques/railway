@@ -30,10 +30,10 @@ describe("OpenAPI contract", () => {
     expect(doc.openapi).toBe("3.1.0");
   });
 
-  it("describes all 36 operations of the v1 API", async () => {
+  it("describes all 45 operations of the v1 API", async () => {
     const doc = await loadDoc();
     const ops = operations(doc);
-    expect(ops).toHaveLength(36);
+    expect(ops).toHaveLength(45);
     expect(ops.map((o) => `${o.method} ${o.path}`).sort()).toEqual(
       [
         "post /v1/auth/login",
@@ -72,6 +72,15 @@ describe("OpenAPI contract", () => {
         "post /v1/organizations/{organizationId}/webhook-subscriptions",
         "get /v1/organizations/{organizationId}/webhook-subscriptions",
         "delete /v1/organizations/{organizationId}/webhook-subscriptions/{subscriptionId}",
+        "get /v1/organizations/{organizationId}/plans",
+        "get /v1/organizations/{organizationId}/subscription",
+        "put /v1/organizations/{organizationId}/subscription",
+        "get /v1/organizations/{organizationId}/invoices",
+        "get /v1/organizations/{organizationId}/invoices/{invoiceId}",
+        "post /v1/organizations/{organizationId}/invoices/{invoiceId}/finalize",
+        "get /v1/services/{instanceId}/autoscaling",
+        "put /v1/services/{instanceId}/autoscaling",
+        "get /v1/regions",
       ].sort(),
     );
   });

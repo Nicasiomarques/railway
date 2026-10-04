@@ -202,3 +202,32 @@ export const DELIVER_WEBHOOK_JOB_RETRY = {
   removeOnComplete: true,
   removeOnFail: 100,
 } as const;
+
+// Billing (roadmap.md Phase 4: "Billing on top of usage_events"). Own queue: closing a billing
+// period has no relation to a deployment's, a domain's, a backup's or a webhook delivery's
+// lifecycle. One job per (organization, period): re-enqueuing the same period is expected --
+// that's how the worker is asked to regenerate an invoice -- so unlike the other per-resource
+// queues, the jobId intentionally includes the period, not just the organization.
+export const BILLING_QUEUE = "billing";
+export const CLOSE_BILLING_PERIOD_JOB = "close-billing-period";
+
+export interface CloseBillingPeriodJobData {
+  organizationId: string;
+  // ISO 8601 instants, half-open range [periodStart, periodEnd) -- same convention as the usage
+  // API's from/to (api/src/routes/usage.ts).
+  periodStart: string;
+  periodEnd: string;
+}
+
+export function closeBillingPeriodJobId(data: CloseBillingPeriodJobData): string {
+  return `close-billing-period-${data.organizationId}-${data.periodStart}`;
+}
+
+// Like a usage sample, closing a period either succeeds or fails outright against Postgres (no
+// external propagation to wait out), so a short budget with exponential backoff is enough.
+export const CLOSE_BILLING_PERIOD_JOB_RETRY = {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 3000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;

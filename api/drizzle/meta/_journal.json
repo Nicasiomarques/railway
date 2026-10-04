@@ -85,6 +85,13 @@
       "when": 1791094987510,
       "tag": "0011_minio_template_source",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791096645749,
+      "tag": "0012_phase4_billing_autoscaling_regions",
+      "breakpoints": true
     }
   ]
 }

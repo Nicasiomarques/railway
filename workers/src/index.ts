@@ -15,6 +15,7 @@ import { PostgresDeploymentStore } from "./reconciler/postgres-store.js";
 import { createReconcileWorker } from "./reconciler/worker.js";
 import { InMemoryRuntime } from "./runtime/in-memory.js";
 import { K8sRuntime } from "./runtime/k8s.js";
+import { SingleRegionRuntimeRegistry } from "./runtime/registry.js";
 import { K8sBuilder } from "./build/k8s-builder.js";
 import { PostgresEnvironmentStore } from "./provisioning/postgres-store.js";
 import { InMemoryDomainProvider } from "./domain/in-memory.js";
@@ -26,6 +27,8 @@ import { createBackupWorker } from "./backup/worker.js";
 import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
 import { PostgresUsageStore } from "./usage/postgres-store.js";
 import { createUsageWorker } from "./usage/worker.js";
+import { PostgresBillingStore } from "./billing/postgres-store.js";
+import { createBillingWorker } from "./billing/worker.js";
 import { PostgresCronStore } from "./cron/postgres-store.js";
 import { registerCronSchedules } from "./cron/scheduler.js";
 import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
@@ -60,8 +63,15 @@ function parseEgressAllow(raw: string | undefined): { cidr: string; port: number
   });
 }
 
-// One runtime per process: the reconciler and the provisioning saga share the same client.
+// One runtime per process: the provisioning saga and the usage worker share the same client.
 const runtime = runtimeKind === "k8s" ? K8sRuntime.fromContext(process.env.K8S_CONTEXT) : new InMemoryRuntime();
+
+// Multi-region (roadmap.md Phase 4): the reconciler resolves a RuntimeAdapter per deployment's
+// project region (workers/src/runtime/registry.ts), not from a single injected instance. No
+// multi-cluster configuration is wired here yet -- every regionId still resolves to the one
+// `runtime` above, which is exactly today's single-cluster behavior. Moving to several real
+// clusters only needs this registry swapped for a K8sRuntimeRegistry built from the `regions` table.
+const runtimeRegistry = new SingleRegionRuntimeRegistry(runtime);
 
 // Cron (roadmap Phase 4): producer-side Queues for the same DEPLOYMENTS_QUEUE the reconcile Worker
 // below consumes from -- one per job data shape only for typing purposes (BullMQ Queue instances are
@@ -76,7 +86,7 @@ await registerCronSchedules(cronQueue, await cronStore.listCronInstances());
 
 const worker = createReconcileWorker(connection, {
   store: new PostgresDeploymentStore(db, createEnvLoader(db, keyring)),
-  runtime,
+  runtime: runtimeRegistry,
   provisioning: { store: new PostgresEnvironmentStore(db), runtime },
   cron: { store: cronStore, reconcileQueue: deploymentsQueue },
   builder:
@@ -127,6 +137,14 @@ const usageWorker = createUsageWorker(connection, {
 });
 observeWorker(usageWorker, USAGE_QUEUE);
 
+// Billing (roadmap.md Phase 4): closes a billing period's usage_events into a draft invoice per
+// subscribed organization. No monthly schedule is wired here yet either -- see
+// workers/src/billing/worker.ts (enqueueCloseBillingPeriodForAllOrganizations) for how that would
+// be connected, the same way usage/worker.ts documents scheduleUsageSampling.
+const billingWorker = createBillingWorker(connection, {
+  store: new PostgresBillingStore(db),
+});
+
 // Outbound webhooks (roadmap.md Phase 5): delivery via Node's native fetch (FetchWebhookTransport,
 // the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
 // subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
@@ -146,6 +164,7 @@ async function shutdown(): Promise<void> {
   await domainWorker.close();
   await backupWorker.close();
   await usageWorker.close();
+  await billingWorker.close();
   await deploymentsQueue.close();
   await cronQueue.close();
   await webhookWorker.close();

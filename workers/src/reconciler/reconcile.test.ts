@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { namespaceFor, workloadName } from "../runtime/adapter.js";
 import { InMemoryRuntime } from "../runtime/in-memory.js";
+import { SingleRegionRuntimeRegistry } from "../runtime/registry.js";
 import { InMemoryDeploymentStore } from "./in-memory-store.js";
 import { handleReconcileJob, reconcileInstance } from "./reconcile.js";
 import { PermanentError } from "./errors.js";
@@ -17,6 +18,7 @@ function deployment(overrides: Partial<DeploymentRecord> & Pick<DeploymentRecord
   return {
     serviceInstanceId: INSTANCE,
     environmentId: ENVIRONMENT,
+    regionId: "region-1",
     versionNo: 1,
     imageDigest: IMAGE_V1,
     commitSha: null,
@@ -24,6 +26,7 @@ function deployment(overrides: Partial<DeploymentRecord> & Pick<DeploymentRecord
     rootDir: "/",
     env: { PORT: "3000" },
     replicas: 1,
+    autoscaling: null,
     ...overrides,
   };
 }
@@ -32,7 +35,7 @@ function setup() {
   const store = new InMemoryDeploymentStore();
   const runtime = new InMemoryRuntime();
   const builder = new InMemoryBuilder();
-  return { store, runtime, builder, deps: { store, runtime, builder } };
+  return { store, runtime, builder, deps: { store, runtime: new SingleRegionRuntimeRegistry(runtime), builder } };
 }
 
 describe("reconcileInstance", () => {
@@ -108,6 +111,18 @@ describe("reconcileInstance", () => {
     expect(store.events.length).toBe(eventsAfterConverge);
   });
 
+  it("with autoscaling on, waits for the policy's minReplicas rather than the instance's own replicas", async () => {
+    const { deps, store, runtime } = setup();
+    const autoscaling = { minReplicas: 3, maxReplicas: 10, targetCpuPercent: 70, cpuRequestMillicores: 250 };
+    store.add(deployment({ id: "d1", status: "Deploying", replicas: 1, autoscaling }));
+
+    await reconcileInstance(deps, INSTANCE);
+    runtime.setReadyReplicas(workloadName(INSTANCE), 1); // below minReplicas: still not ready
+    expect((await reconcileInstance(deps, INSTANCE)).kind).toBe("pending");
+
+    runtime.setReadyReplicas(workloadName(INSTANCE), 3); // at minReplicas: ready
+    expect(await reconcileInstance(deps, INSTANCE)).toEqual({ kind: "converged", deploymentId: "d1" });
+  });
 });
 
 describe("handleReconcileJob (retries and final failure)", () => {
@@ -171,7 +186,7 @@ describe("handleReconcileJob: failure classification", () => {
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
-    const result = await handleReconcileJob({ store, runtime }, { serviceInstanceId: INSTANCE }, budget);
+    const result = await handleReconcileJob({ store, runtime: new SingleRegionRuntimeRegistry(runtime) }, { serviceInstanceId: INSTANCE }, budget);
 
     expect(result).toEqual({ kind: "failed", deploymentId: "d1" });
     expect(store.get("d1")!.status).toBe("Failed");
@@ -188,7 +203,7 @@ describe("handleReconcileJob: failure classification", () => {
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
-    await expect(handleReconcileJob({ store, runtime }, { serviceInstanceId: INSTANCE }, budget)).rejects.toThrow(
+    await expect(handleReconcileJob({ store, runtime: new SingleRegionRuntimeRegistry(runtime) }, { serviceInstanceId: INSTANCE }, budget)).rejects.toThrow(
       /cluster api is down/,
     );
     expect(store.get("d1")!.status).toBe("Deploying");
@@ -205,7 +220,7 @@ describe("handleReconcileJob: failure classification", () => {
     };
     store.add(deployment({ id: "d1", status: "Deploying" }));
 
-    const result = await handleReconcileJob({ store, runtime }, { serviceInstanceId: INSTANCE }, lastAttempt);
+    const result = await handleReconcileJob({ store, runtime: new SingleRegionRuntimeRegistry(runtime) }, { serviceInstanceId: INSTANCE }, lastAttempt);
 
     expect(result).toEqual({ kind: "failed", deploymentId: "d1" });
     expect(store.get("d1")!.status).toBe("Failed");
@@ -283,7 +298,11 @@ describe("repository deployment: build stage", () => {
     const runtime = new InMemoryRuntime();
     store.add(deployment({ id: "d1", status: "Queued", ...REPO }));
 
-    const result = await handleReconcileJob({ store, runtime }, { serviceInstanceId: INSTANCE }, { attemptsMade: 0, maxAttempts: 3 });
+    const result = await handleReconcileJob(
+      { store, runtime: new SingleRegionRuntimeRegistry(runtime) },
+      { serviceInstanceId: INSTANCE },
+      { attemptsMade: 0, maxAttempts: 3 },
+    );
 
     expect(result).toEqual({ kind: "failed", deploymentId: "d1" });
     expect(store.events.at(-1)!.reason).toMatch(/builder not configured/);

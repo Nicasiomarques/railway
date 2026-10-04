@@ -10,7 +10,7 @@ const app = buildApp(db, { keyring: testKeyring() });
 
 beforeEach(async () => {
   const { rows } = await db.execute<{ tablename: string }>(
-    sql`select tablename from pg_tables where schemaname = 'public' and tablename <> '__drizzle_migrations'`,
+    sql`select tablename from pg_tables where schemaname = 'public' and tablename not in ('__drizzle_migrations', 'regions')`,
   );
   const tables = rows.map((r) => `"${r.tablename}"`).join(", ");
   await db.execute(sql.raw(`truncate ${tables} restart identity cascade`));

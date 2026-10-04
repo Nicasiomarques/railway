@@ -9,7 +9,7 @@ import { assertProjectQuota } from "../quota.js";
 import { createdAtMs, decodeCursor, encodeCursor } from "../pagination.js";
 import { slugify } from "../slug.js";
 import type { Db } from "../db/client.js";
-import { auditLogs, environments, projects } from "../db/schema.js";
+import { auditLogs, environments, projects, regions } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
 export const projectParams = z.object({ projectId: z.string().uuid() });
@@ -22,6 +22,9 @@ export const createProjectBody = z.object({
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
     .max(60)
     .optional(),
+  // Multi-region (roadmap.md Phase 4). Omitted uses the database's own default region (see
+  // db/src/schema.ts's DEFAULT_REGION_ID) -- the only region in a single-cluster deployment.
+  regionId: z.string().uuid().optional(),
 });
 
 export const listProjectsQuery = z.object({
@@ -67,6 +70,11 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       run: async (tx) => {
         await assertProjectQuota(tx, body.organizationId);
 
+        if (body.regionId) {
+          const [region] = await tx.select({ id: regions.id }).from(regions).where(eq(regions.id, body.regionId));
+          if (!region) throw new ApiError(404, "region_not_found", "Region not found.");
+        }
+
         const [taken] = await tx
           .select({ id: projects.id })
           .from(projects)
@@ -82,7 +90,12 @@ export const projectRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
 
         const [project] = await tx
           .insert(projects)
-          .values({ organizationId: body.organizationId, name: body.name, slug })
+          .values({
+            organizationId: body.organizationId,
+            name: body.name,
+            slug,
+            ...(body.regionId ? { regionId: body.regionId } : {}),
+          })
           .returning();
         // Every project is born with a production environment (see architecture.md §6).
         await tx.insert(environments).values({ projectId: project.id, name: "production", type: "production" });

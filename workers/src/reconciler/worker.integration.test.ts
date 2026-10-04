@@ -3,6 +3,7 @@ import { Redis } from "ioredis";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { namespaceFor, workloadName } from "../runtime/adapter.js";
 import { InMemoryRuntime } from "../runtime/in-memory.js";
+import { SingleRegionRuntimeRegistry } from "../runtime/registry.js";
 import { InMemoryDeploymentStore } from "./in-memory-store.js";
 import { DEPLOYMENTS_QUEUE, RECONCILE_JOB, createReconcileWorker, enqueueReconcile, type ReconcileJobData } from "./worker.js";
 import { CANCEL_BUILD_JOB, type CancelBuildJobData } from "@railway-like/shared";
@@ -63,7 +64,7 @@ describe.skipIf(!REDIS_URL)("reconciler with real BullMQ and Redis", () => {
     await runtime.applyWorkload({ name: workloadName(INSTANCE), namespace: namespaceFor("env-int"), image: IMAGE, env: { PORT: "3000" }, replicas: 1 });
     runtime.markReady(workloadName(INSTANCE));
 
-    const worker = createReconcileWorker(connection, { store, runtime });
+    const worker = createReconcileWorker(connection, { store, runtime: new SingleRegionRuntimeRegistry(runtime) });
     const events = new QueueEvents(DEPLOYMENTS_QUEUE, { connection });
     await events.waitUntilReady();
     const job = await queue.add(RECONCILE_JOB, { serviceInstanceId: INSTANCE }, { attempts: 3, backoff: { type: "fixed", delay: 50 } });
@@ -80,7 +81,7 @@ describe.skipIf(!REDIS_URL)("reconciler with real BullMQ and Redis", () => {
     const runtime = new InMemoryRuntime();
     deployment(store);
 
-    const worker = createReconcileWorker(connection, { store, runtime });
+    const worker = createReconcileWorker(connection, { store, runtime: new SingleRegionRuntimeRegistry(runtime) });
     const events = new QueueEvents(DEPLOYMENTS_QUEUE, { connection });
     await events.waitUntilReady();
     const job = await queue.add(RECONCILE_JOB, { serviceInstanceId: INSTANCE }, { attempts: 2, backoff: { type: "fixed", delay: 50 } });
@@ -102,7 +103,7 @@ describe.skipIf(!REDIS_URL)("build cancellation job on the same queue", () => {
     await queue.obliterate({ force: true });
     const builder = new InMemoryBuilder();
     await builder.start({ deploymentId: "d-cancel", serviceInstanceId: INSTANCE, repoUrl: "https://x/y.git", commitSha: "a".repeat(40), rootDir: "/" });
-    const worker = createReconcileWorker(connection, { store: new InMemoryDeploymentStore(), runtime: new InMemoryRuntime(), builder });
+    const worker = createReconcileWorker(connection, { store: new InMemoryDeploymentStore(), runtime: new SingleRegionRuntimeRegistry(new InMemoryRuntime()), builder });
     const events = new QueueEvents(DEPLOYMENTS_QUEUE, { connection });
     await events.waitUntilReady();
 

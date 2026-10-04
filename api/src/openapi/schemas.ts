@@ -42,12 +42,21 @@ export const OrganizationSummarySchema = z.object({
 export const ProjectSchema = z.object({
   id: uuid,
   organizationId: uuid,
+  // Multi-region (roadmap.md Phase 4). Defaults to the single default region when omitted at
+  // creation -- see db/src/schema.ts's DEFAULT_REGION_ID.
+  regionId: uuid,
   name: z.string(),
   slug: z.string(),
   canvasLayout: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
   createdAt: timestamp,
   updatedAt: timestamp,
   deletedAt: timestamp.nullable(),
+});
+
+export const RegionSchema = z.object({
+  id: uuid,
+  slug: z.string(),
+  name: z.string(),
 });
 
 export const CanvasLayoutSchema = z.object({
@@ -235,6 +244,63 @@ export const UsageSummaryItemSchema = z.object({
   serviceName: z.string().nullable(),
   totalReplicaMinutes: z.number(),
   sampleCount: z.number().int(),
+});
+
+// Reference pricing data, seeded by migration (db/src/schema.ts: `plans`) -- never created through
+// the API, so there's no corresponding CreatePlanBody.
+export const PlanSchema = z.object({
+  id: uuid,
+  slug: z.string(),
+  name: z.string(),
+  pricePerReplicaMinuteCents: z.number().int(),
+  includedReplicaMinutes: z.number().int(),
+});
+
+// An organization with no subscription has never picked a plan and isn't billed (api/src/routes/billing.ts).
+export const SubscriptionSchema = z.object({
+  organizationId: uuid,
+  plan: PlanSchema,
+  status: z.enum(["active", "canceled"]),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const InvoiceLineItemSchema = z.object({
+  id: uuid,
+  projectId: uuid.nullable(),
+  projectName: z.string().nullable(),
+  description: z.string(),
+  replicaMinutes: z.number().int(),
+  amountCents: z.number().int(),
+});
+
+export const InvoiceSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  periodStart: timestamp,
+  periodEnd: timestamp,
+  status: z.enum(["draft", "finalized"]),
+  totalCents: z.number().int(),
+  currency: z.string(),
+  finalizedAt: timestamp.nullable(),
+  createdAt: timestamp,
+});
+
+export const InvoiceDetailSchema = InvoiceSchema.extend({
+  lineItems: z.array(InvoiceLineItemSchema),
+});
+
+// Autoscaling (roadmap.md Phase 4). min/maxReplicas, targetCpuPercent and cpuRequestMillicores are
+// only non-null when enabled is true -- see service_instances in db/src/schema.ts.
+export const AutoscalingPolicySchema = z.object({
+  instanceId: uuid,
+  enabled: z.boolean(),
+  // The instance's fixed replica count; what's used directly when enabled is false.
+  replicas: z.number().int(),
+  minReplicas: z.number().int().nullable(),
+  maxReplicas: z.number().int().nullable(),
+  targetCpuPercent: z.number().int().nullable(),
+  cpuRequestMillicores: z.number().int().nullable(),
 });
 
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
