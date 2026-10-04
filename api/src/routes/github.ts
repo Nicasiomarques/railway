@@ -506,6 +506,32 @@ export const githubRoutes: FastifyPluginAsync<{
         }
       }
 
+      if (prOutcome) {
+        for (const dep of prOutcome.created) {
+          try {
+            await queue?.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
+          } catch (err) {
+            request.log.warn({ err, deploymentId: dep.id }, "github pull_request: failed to enqueue the reconciler");
+          }
+        }
+
+        // architecture.md §8: a single comment on the PR, edited on each update (never one per push/sync).
+        const statusLabel: Partial<Record<PullRequestStatus, string>> = {
+          created: "created",
+          updated: "updated",
+          scheduled_for_removal: "scheduled for removal",
+        };
+        const label = statusLabel[prOutcome.status];
+        if (prOutcome.installationId !== null && label) {
+          await prCommentClient.upsertPrComment(request.log, {
+            installationId: prOutcome.installationId,
+            repoId: prOutcome.repoId,
+            prNumber: prOutcome.prNumber,
+            body: `Preview environment pr-${prOutcome.prNumber}: ${label}`,
+          });
+        }
+      }
+
       return reply.code(202).send({ status: "accepted" });
     },
   );

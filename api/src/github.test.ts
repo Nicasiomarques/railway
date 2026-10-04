@@ -1,11 +1,12 @@
 import { randomUUID, createHmac } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "./app.js";
 import { testKeyring } from "./crypto/testing.js";
 import { db } from "./db/client.js";
 import { createUserWithToken } from "./db/fixtures.js";
-import { deployments, environments, githubRepoLinks } from "./db/schema.js";
+import { deployments, environments, githubRepoLinks, serviceInstances } from "./db/schema.js";
+import type { GitHubPrCommentInput } from "./github/clients.js";
 
 const keyring = testKeyring();
 const WEBHOOK_SECRET = "t3st-s3cr3t";
@@ -21,12 +22,21 @@ class FakeQueue {
   }
 }
 
+class FakePrCommentClient {
+  calls: GitHubPrCommentInput[] = [];
+  async upsertPrComment(_log: unknown, input: GitHubPrCommentInput) {
+    this.calls.push(input);
+  }
+}
+
 const queue = new FakeQueue();
-const app = buildApp(db, { keyring, queue, githubWebhookSecret: WEBHOOK_SECRET });
+const prComments = new FakePrCommentClient();
+const app = buildApp(db, { keyring, queue, githubWebhookSecret: WEBHOOK_SECRET, githubPrCommentClient: prComments });
 
 beforeEach(async () => {
   queue.calls = [];
   queue.cancels = [];
+  prComments.calls = [];
   const { rows } = await db.execute<{ tablename: string }>(
     sql`select tablename from pg_tables where schemaname = 'public' and tablename <> '__drizzle_migrations'`,
   );
@@ -105,6 +115,17 @@ const pushPayload = (overrides: Record<string, unknown> = {}) => ({
   installation: { id: INSTALLATION_ID },
   head_commit: { author: { name: "Dev" } },
   pusher: { name: "dev" },
+  ...overrides,
+});
+
+const PR_NUMBER = 42;
+const PR_BRANCH = "feature/login";
+
+const prPayload = (overrides: Record<string, unknown> = {}) => ({
+  action: "opened",
+  pull_request: { number: PR_NUMBER, head: { sha: SHA, ref: PR_BRANCH }, user: { login: "dev" } },
+  repository: { id: REPO_ID },
+  installation: { id: INSTALLATION_ID },
   ...overrides,
 });
 
@@ -210,5 +231,99 @@ describe("GitHub webhook", () => {
 
     expect(res.statusCode).toBe(202);
     expect(await db.select().from(githubRepoLinks)).toHaveLength(0);
+  });
+
+  // architecture.md §8: PR previews (phase 2).
+  describe("pull_request (PR previews)", () => {
+    it("a PR opened creates a preview environment (parented on Production, no Staging yet), its service instance and a deployment, and comments on the PR", async () => {
+      const { projectId } = await setupGithubProject();
+
+      const res = await sendWebhook(prPayload({ action: "opened" }), { event: "pull_request" });
+      expect(res.statusCode).toBe(202);
+
+      const [previewEnv] = await db
+        .select()
+        .from(environments)
+        .where(and(eq(environments.projectId, projectId), eq(environments.name, "pr-42")));
+      expect(previewEnv).toMatchObject({ type: "preview", branchRule: PR_BRANCH, ttlAt: null });
+
+      const [productionEnv] = await db
+        .select()
+        .from(environments)
+        .where(and(eq(environments.projectId, projectId), eq(environments.type, "production")));
+      // No Staging environment exists for this project, so the preview falls back to Production as its parent.
+      expect(previewEnv.parentEnvironmentId).toBe(productionEnv.id);
+
+      const instances = await db.select().from(serviceInstances).where(eq(serviceInstances.environmentId, previewEnv.id));
+      expect(instances).toHaveLength(1);
+
+      const rows = await db.select().from(deployments).where(eq(deployments.serviceInstanceId, instances[0].id));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: "Queued", trigger: "push", commitSha: SHA, branch: PR_BRANCH, author: "dev", versionNo: 1 });
+
+      expect(queue.calls).toEqual([{ serviceInstanceId: instances[0].id, versionNo: 1 }]);
+      expect(prComments.calls).toHaveLength(1);
+      expect(prComments.calls[0]).toMatchObject({ prNumber: PR_NUMBER, body: "Preview environment pr-42: created" });
+    });
+
+    it("a PR synchronized (new commit) reuses the same preview environment and creates a new deployment", async () => {
+      const { projectId } = await setupGithubProject();
+      await sendWebhook(prPayload({ action: "opened" }), { event: "pull_request" });
+
+      const newSha = "b".repeat(40);
+      const res = await sendWebhook(
+        prPayload({ action: "synchronize", pull_request: { number: PR_NUMBER, head: { sha: newSha, ref: PR_BRANCH }, user: { login: "dev" } } }),
+        { event: "pull_request" },
+      );
+      expect(res.statusCode).toBe(202);
+
+      // Still a single preview environment: synchronize reuses it instead of creating another one.
+      const envs = await db
+        .select()
+        .from(environments)
+        .where(and(eq(environments.projectId, projectId), eq(environments.name, "pr-42")));
+      expect(envs).toHaveLength(1);
+
+      const instances = await db.select().from(serviceInstances).where(eq(serviceInstances.environmentId, envs[0].id));
+      expect(instances).toHaveLength(1);
+
+      const rows = await db
+        .select()
+        .from(deployments)
+        .where(eq(deployments.serviceInstanceId, instances[0].id))
+        .orderBy(asc(deployments.versionNo));
+      expect(rows).toHaveLength(2);
+      expect(rows[0].commitSha).toBe(SHA);
+      expect(rows[1]).toMatchObject({ commitSha: newSha, status: "Queued" });
+
+      expect(queue.calls).toHaveLength(2);
+      expect(prComments.calls.at(-1)).toMatchObject({ body: "Preview environment pr-42: updated" });
+    });
+
+    it("a PR closed schedules the preview environment's removal (ttl_at) without deleting it or its instances", async () => {
+      const { projectId } = await setupGithubProject();
+      await sendWebhook(prPayload({ action: "opened" }), { event: "pull_request" });
+      const queueCallsAfterOpen = queue.calls.length;
+      const beforeClose = Date.now();
+
+      const res = await sendWebhook(prPayload({ action: "closed" }), { event: "pull_request" });
+      expect(res.statusCode).toBe(202);
+
+      const [env] = await db
+        .select()
+        .from(environments)
+        .where(and(eq(environments.projectId, projectId), eq(environments.name, "pr-42")));
+      expect(env.deletedAt).toBeNull();
+      expect(env.ttlAt).not.toBeNull();
+      expect(env.ttlAt!.getTime()).toBeGreaterThan(beforeClose);
+
+      const instances = await db.select().from(serviceInstances).where(eq(serviceInstances.environmentId, env.id));
+      expect(instances).toHaveLength(1);
+      expect(instances[0].deletedAt).toBeNull();
+
+      // No new deployment: closing a PR doesn't deploy anything (the reconciler call count doesn't move past the opened PR's).
+      expect(queue.calls).toHaveLength(queueCallsAfterOpen);
+      expect(prComments.calls.at(-1)).toMatchObject({ body: "Preview environment pr-42: scheduled for removal" });
+    });
   });
 });
