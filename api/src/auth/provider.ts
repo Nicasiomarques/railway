@@ -7,6 +7,12 @@
 
 export interface LoginCredentials {
   email: string;
+  password: string;
+}
+
+export interface RegisterCredentials {
+  email: string;
+  password: string;
 }
 
 export interface LoginResult {
@@ -17,9 +23,15 @@ export interface LoginResult {
 }
 
 export interface AuthProvider {
-  // Authenticates (or, for the local provider, creates) a user and issues a brand-new API token
-  // for it. Returns `null` for invalid credentials instead of throwing, so the route can map that
-  // to a 401 without depending on an auth-specific exception type.
+  // Creates a brand-new user with a password and issues a token for it. Returns `"email_taken"`
+  // instead of throwing when the email is already registered, so the route can map that to a 409
+  // without depending on an auth-specific exception type.
+  register(credentials: RegisterCredentials): Promise<LoginResult | "email_taken">;
+
+  // Authenticates an existing user by email + password and issues a brand-new API token for it.
+  // Returns `null` for invalid credentials (unknown email, no password set, or wrong password —
+  // deliberately not distinguished, to avoid confirming whether an email is registered) instead of
+  // throwing, so the route can map that to a 401 without depending on an auth-specific exception type.
   login(credentials: LoginCredentials): Promise<LoginResult | null>;
 }
 
