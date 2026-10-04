@@ -127,6 +127,7 @@ export function ProjectDetail({
 
       {error && <p className="error">{error}</p>}
 
+      {(services.isLoading || canvasLayout.isLoading) && <div className="skeleton canvas-skeleton" />}
       {services.data && canvasLayout.data && (
         <ServiceCanvas
           projectId={projectId}
@@ -147,6 +148,12 @@ export function ProjectDetail({
         <h3>Services</h3>
       </div>
 
+      {services.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 44 }} />
+          <li className="skeleton" style={{ height: 44 }} />
+        </ul>
+      )}
       <ul className="list">
         {services.data?.map((s) => {
           const inEnv = s.instances.find((i) => i.environmentName === environment);
@@ -214,11 +221,13 @@ export function ProjectDetail({
 
       {open && openInstance && openService && (
         <ServiceInspector
+          serviceId={open.serviceId}
           instanceId={open.instanceId}
           serviceName={open.name}
           environmentName={openInstance.environmentName}
           kind={open.kind}
           source={open.source}
+          rootDir={openService.rootDir}
           canWrite={canWrite}
           onClose={() => setOpen(null)}
         />

@@ -251,6 +251,7 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
   touch-action: none;
 }
 .canvas-empty { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; }
+.canvas-skeleton { min-height: 280px; border-radius: var(--radius); }
 .node {
   position: absolute;
   padding: 10px 12px;
@@ -344,6 +345,27 @@ main { flex: 1; max-width: 1040px; width: 100%; margin: 0 auto; padding: 28px; }
 .timeline ol { padding-left: 18px; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .ghost.small { padding: 3px 10px; font-size: 12px; }
 
+.pipeline { list-style: none; display: flex; align-items: center; gap: 0; margin: 14px 0; padding: 0; }
+.pipeline-step { display: flex; align-items: center; gap: 8px; flex: 1; position: relative; }
+.pipeline-step:not(:last-child)::after {
+  content: "";
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 0 6px;
+}
+.pipeline-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border-strong); flex: none; }
+.pipeline-label { font-size: 11px; color: var(--faint); white-space: nowrap; }
+.pipeline-step.done .pipeline-dot { background: var(--success); }
+.pipeline-step.done .pipeline-label { color: var(--success); }
+.pipeline-step.done:not(:last-child)::after { background: var(--success); }
+.pipeline-step.active .pipeline-dot { background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+.pipeline-step.active .pipeline-label { color: var(--accent-strong); font-weight: 600; }
+.pipeline-step.failed .pipeline-dot { background: var(--danger); }
+.pipeline-step.failed .pipeline-label { color: var(--danger); font-weight: 600; }
+
+.saving-indicator { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+
 .build-logs { margin-top: 12px; }
 .build-logs pre { background: var(--bg); color: #d8dee9; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; max-height: 320px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
 
@@ -373,6 +395,9 @@ pre.terminal { background: var(--bg); color: #d8dee9; border: 1px solid var(--bo
 
 /* ---------- Domains ---------- */
 /* shares .card-row, .status */
+
+/* ---------- Settings ---------- */
+.settings .card-row { align-items: center; }
 
 /* ---------- Audit log ---------- */
 .audit-log { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 18px; }

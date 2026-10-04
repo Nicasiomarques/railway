@@ -52,6 +52,7 @@ export function ServiceCanvas({
   const [positions, setPositions] = useState<Record<string, Pos>>(layout);
   const [linking, setLinking] = useState<{ fromInstanceId: string; x: number; y: number } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(
     null,
@@ -83,8 +84,11 @@ export function ServiceCanvas({
   // resync effect above -- so loading or refetching the saved layout doesn't write it right back.
   function scheduleSave(next: Record<string, Pos>) {
     if (!canWrite) return;
+    setSaving(true);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => onLayoutChange(next), SAVE_DEBOUNCE_MS);
+    saveTimer.current = setTimeout(() => {
+      Promise.resolve(onLayoutChange(next)).finally(() => setSaving(false));
+    }, SAVE_DEBOUNCE_MS);
   }
 
   useEffect(() => {
@@ -172,9 +176,16 @@ export function ServiceCanvas({
             ? "Clique num node para ver detalhes. Arraste para reorganizar, ou o ponto à direita para conectar."
             : "Clique num node para ver detalhes. Arraste para reorganizar."}
         </span>
-        <button className="ghost" onClick={resetLayout}>
-          Rearrange
-        </button>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {saving && (
+            <span className="saving-indicator">
+              <span className="spinner" /> Saving…
+            </span>
+          )}
+          <button className="ghost" onClick={resetLayout}>
+            Rearrange
+          </button>
+        </span>
       </div>
 
       <div className="canvas" ref={canvasRef} style={{ height }}>

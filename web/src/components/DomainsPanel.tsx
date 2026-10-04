@@ -57,6 +57,12 @@ export function DomainsPanel({ instanceId, canWrite }: { instanceId: string; can
 
       {error && <p className="error">{error}</p>}
 
+      {list.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 38 }} />
+          <li className="skeleton" style={{ height: 38 }} />
+        </ul>
+      )}
       <ul className="list">
         {list.data?.map((d) => (
           <li key={d.id} className="card-row">

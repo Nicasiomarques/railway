@@ -46,6 +46,13 @@ export function ProjectList({
 
       {error && <p className="error">{error}</p>}
 
+      {projects.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 40 }} />
+          <li className="skeleton" style={{ height: 40 }} />
+          <li className="skeleton" style={{ height: 40 }} />
+        </ul>
+      )}
       <ul className="list">
         {projects.data?.map((p) => (
           <li key={p.id}>

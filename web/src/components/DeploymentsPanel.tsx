@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiProblem, TERMINAL_STATUSES, type Deployment, type DeploymentDetail } from "../api";
+import { DeploymentPipeline } from "./DeploymentPipeline";
 
 const SHA = /^[a-f0-9]{40}$/;
 const DIGEST = /^[a-z0-9]+(?:[._/-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/;
@@ -31,6 +32,7 @@ export function DeploymentsPanel({
   const [origin, setOrigin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [deploying, setDeploying] = useState(false);
   const isRepo = source === "github_repo";
 
   const list = useQuery({
@@ -58,6 +60,7 @@ export function DeploymentsPanel({
   async function deploy(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setDeploying(true);
     try {
       const created = await api<Deployment>(`/services/${instanceId}/deployments`, {
         method: "POST",
@@ -70,6 +73,8 @@ export function DeploymentsPanel({
       queryClient.invalidateQueries({ queryKey: ["deployments", instanceId] });
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error creating deployment.");
+    } finally {
+      setDeploying(false);
     }
   }
 
@@ -95,13 +100,25 @@ export function DeploymentsPanel({
             placeholder={isRepo ? "Full commit SHA (40 hex)" : "repo@sha256:<64 hex>"}
             aria-label={isRepo ? "commit" : "image digest"}
           />
-          <button type="submit" disabled={!originValid}>
-            Deploy
+          <button type="submit" disabled={!originValid || deploying}>
+            {deploying ? (
+              <>
+                <span className="spinner" /> Deploying…
+              </>
+            ) : (
+              "Deploy"
+            )}
           </button>
         </form>
       )}
       {error && <p className="error">{error}</p>}
 
+      {list.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 40 }} />
+          <li className="skeleton" style={{ height: 40 }} />
+        </ul>
+      )}
       <ul className="list">
         {list.data?.map((d) => (
           <li key={d.id}>
@@ -128,6 +145,7 @@ export function DeploymentsPanel({
           <p className="muted">
             {detail.data.commitSha ? `commit ${detail.data.commitSha}` : `image ${detail.data.imageDigest ?? "—"}`}
           </p>
+          <DeploymentPipeline status={detail.data.status} />
           <ol>
             {detail.data.events.map((e, i) => (
               <li key={i}>

@@ -12,6 +12,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
   // Keys whose "reveal" was explicitly requested; never populated by default.
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
@@ -22,6 +23,7 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
 
   async function saveValue(key: string, value: string, isSecret: boolean) {
     setError(null);
+    setSavingKey(key);
     try {
       // PUT upserts by key: the same call handles both create and update.
       await api(`/services/${instanceId}/variables/${key}`, {
@@ -33,6 +35,8 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error saving variable.");
       return false;
+    } finally {
+      setSavingKey(null);
     }
   }
 
@@ -89,9 +93,21 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     <section className="variables">
       <div className="section-head">
         <h3>Variables</h3>
+        {savingKey && (
+          <span className="saving-indicator">
+            <span className="spinner" /> Saving…
+          </span>
+        )}
       </div>
       {error && <p className="error">{error}</p>}
 
+      {list.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 38 }} />
+          <li className="skeleton" style={{ height: 38 }} />
+          <li className="skeleton" style={{ height: 38 }} />
+        </ul>
+      )}
       <ul className="list">
         {list.data?.map((v) => {
           const isEditing = editingKey === v.key;
@@ -112,8 +128,8 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
                     placeholder={v.isSecret ? "new secret value" : "value"}
                     autoFocus
                   />
-                  <button type="submit" className="small">
-                    Save
+                  <button type="submit" className="small" disabled={savingKey === v.key}>
+                    {savingKey === v.key ? "Saving…" : "Save"}
                   </button>
                   <button type="button" className="ghost small" onClick={() => setEditingKey(null)}>
                     Cancel
