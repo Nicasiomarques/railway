@@ -44,3 +44,25 @@ export class NoopGitHubChecksClient implements GitHubChecksClient {
     );
   }
 }
+
+export interface GitHubPrCommentInput {
+  installationId: bigint;
+  repoId: bigint;
+  prNumber: number;
+  body: string;
+}
+
+export interface GitHubPrCommentClient {
+  // Creates or edits the PR's preview-status comment (architecture.md §8: "single comment on the
+  // PR, edited on each update" — never a new comment per push/sync).
+  upsertPrComment(log: FastifyBaseLogger, input: GitHubPrCommentInput): Promise<void>;
+}
+
+export class NoopGitHubPrCommentClient implements GitHubPrCommentClient {
+  async upsertPrComment(log: FastifyBaseLogger, input: GitHubPrCommentInput): Promise<void> {
+    log.info(
+      { repoId: input.repoId.toString(), prNumber: input.prNumber, body: input.body },
+      "github: PR comment (noop)",
+    );
+  }
+}

@@ -22,7 +22,7 @@ import { docsRoutes } from "./openapi/docs.js";
 import { deploymentRoutes } from "./routes/deployments.js";
 import { githubRoutes } from "./routes/github.js";
 import type { BackupQueue, DeploymentQueue, DomainQueue } from "./queue.js";
-import type { GitHubChecksClient, GitHubInstallationTokenClient } from "./github/clients.js";
+import type { GitHubChecksClient, GitHubInstallationTokenClient, GitHubPrCommentClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
 
 export function buildApp(
@@ -37,6 +37,7 @@ export function buildApp(
     githubWebhookSecret?: string;
     githubInstallationTokenClient?: GitHubInstallationTokenClient;
     githubChecksClient?: GitHubChecksClient;
+    githubPrCommentClient?: GitHubPrCommentClient;
     runtime?: RuntimeReader;
     authProvider?: AuthProvider;
     rateLimit?: { max?: number; windowMs?: number; login?: { max?: number; windowMs?: number } };
@@ -120,6 +121,7 @@ export function buildApp(
     webhookSecret: opts.githubWebhookSecret,
     installationTokenClient: opts.githubInstallationTokenClient,
     checksClient: opts.githubChecksClient,
+    prCommentClient: opts.githubPrCommentClient,
     prefix: "/v1",
   });
 
