@@ -14,6 +14,10 @@ export interface EnvironmentRuntime {
   ensureNamespace(namespace: string, labels: Record<string, string>): Promise<void>;
   applyDefaultDenyPolicy(namespace: string): Promise<void>;
   applyQuota(namespace: string, quota: EnvironmentQuota): Promise<void>;
+  // Decommissioning counterpart to ensureNamespace: deletes the whole namespace, cascading every
+  // workload, Secret, NetworkPolicy and quota provisioned for it in one call. Idempotent: deleting
+  // an already-gone namespace is not an error (see implementations).
+  deleteNamespace(namespace: string): Promise<void>;
 }
 
 // Quota for the whole environment. Fixed starting value; once per-project plans exist, it'll come from there.

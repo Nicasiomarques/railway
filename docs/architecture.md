@@ -163,6 +163,7 @@ CreateEnvironment(prod)
 - Each step records status; resumes from the point of failure.
 - Every resource receives the labels `platform/project`, `platform/env`, `platform/instance`.
 - GC by reconciliation: orphaned resources are removed after a grace period.
+- Decommissioning (TTL sweep, `workers/src/decommission`): the inverse saga. A periodic sweep (every 5 minutes) finds environments whose `ttl_at` has passed — a PR preview marked for removal, or an ephemeral CI environment — and deletes the environment's whole namespace in one call (undoing steps 1–3 above together), then releases its domains and soft-deletes its service instances and itself.
 - Stateful (Postgres/Redis/volumes): PVC + scheduled backup (volume snapshot + logical dump) to object storage; restore is an explicit, audited operation.
 - Domain: hostname → DNS (wildcard for automatic subdomain) → certificate → route on the edge. Each step visible to the user.
 

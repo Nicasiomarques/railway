@@ -30,6 +30,45 @@ describe("InMemoryRuntime", () => {
   });
 });
 
+describe("deleteNamespace", () => {
+  it("removes every workload applied under the namespace", async () => {
+    const runtime = new InMemoryRuntime();
+    await runtime.applyWorkload(spec);
+    await runtime.applyWorkload({ ...spec, name: "wl-2" });
+
+    await runtime.deleteNamespace("env-ns");
+
+    expect(await runtime.getStatus(REF)).toBeNull();
+    expect(await runtime.getStatus({ name: "wl-2", namespace: "env-ns" })).toBeNull();
+  });
+
+  it("doesn't touch a workload in a different namespace", async () => {
+    const runtime = new InMemoryRuntime();
+    await runtime.applyWorkload(spec);
+    await runtime.applyWorkload({ ...spec, name: "wl-other", namespace: "env-other" });
+
+    await runtime.deleteNamespace("env-ns");
+
+    expect(await runtime.getStatus({ name: "wl-other", namespace: "env-other" })).not.toBeNull();
+  });
+
+  it("an already-gone namespace is a no-op", async () => {
+    const runtime = new InMemoryRuntime();
+    await expect(runtime.deleteNamespace("never-existed")).resolves.toBeUndefined();
+  });
+
+  it("clears the namespace's labels, policy and quota", async () => {
+    const runtime = new InMemoryRuntime();
+    await runtime.ensureNamespace("env-ns", { "platform/env": "env-1" });
+    await runtime.applyDefaultDenyPolicy("env-ns");
+    await runtime.applyQuota("env-ns", { requests: { cpu: "1", memory: "1Gi" }, limits: { cpu: "1", memory: "1Gi" }, pods: 5 });
+
+    await runtime.deleteNamespace("env-ns");
+
+    expect(runtime.environmentState("env-ns")).toEqual({ labels: null, defaultDeny: false, quota: null });
+  });
+});
+
 describe("tailLogs", () => {
   async function collect(iter: AsyncIterable<string>): Promise<string[]> {
     const lines: string[] = [];
