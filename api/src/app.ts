@@ -26,6 +26,7 @@ import { githubRoutes } from "./routes/github.js";
 import type { BackupQueue, DeploymentQueue, DomainQueue, WebhookQueue } from "./queue.js";
 import type { GitHubChecksClient, GitHubInstallationTokenClient, GitHubPrCommentClient } from "./github/clients.js";
 import type { RuntimeReader } from "./runtime.js";
+import { registerMetrics } from "./metrics.js";
 
 export function buildApp(
   db: Db,
@@ -78,6 +79,7 @@ export function buildApp(
   });
 
   app.get("/health", async () => ({ status: "ok" }));
+  registerMetrics(app);
 
   // Everything under /v1 requires a token; the hook is scoped to this encapsulated context.
   app.register(

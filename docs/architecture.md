@@ -239,6 +239,9 @@ feature/*   → Preview (phase 2)
 **Health:** deployment status (state machine) kept separate from runtime status (`running`, `crashlooping`, `sleeping`, `stopped`). Errors go through a translator into human-readable language with a suggested action.
 
 **Platform:** OpenTelemetry traces per job; queue metrics; deploy-time and build-time SLOs.
+First slice implemented: `GET /metrics` (api) and `GET /metrics` on `METRICS_PORT` (workers)
+expose Prometheus-format HTTP and job metrics; see `docs/slos.md` for the series and the SLOs
+defined on top of them, and for what is still missing (traces, logs, dashboards, alerting).
 
 ---
 

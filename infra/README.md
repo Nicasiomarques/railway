@@ -39,7 +39,7 @@ Migrations: `DATABASE_URL=... npx drizzle-kit migrate` inside `api/`, for each d
 ## Variables
 
 - API: `DATABASE_URL`, `REDIS_URL`, `ENCRYPTION_KEYS`, `ENCRYPTION_CURRENT_KID`, `PORT`.
-- Workers: the same encryption and Redis ones, plus `RECONCILER_RUNTIME=k8s`, `K8S_CONTEXT`, `BUILD_REGISTRY=k3d-railway-reg:5000`.
+- Workers: the same encryption and Redis ones, plus `RECONCILER_RUNTIME=k8s`, `K8S_CONTEXT`, `BUILD_REGISTRY=k3d-railway-reg:5000`, `METRICS_PORT` (default `9102`, see `docs/slos.md`).
 
 ## Known limitations
 

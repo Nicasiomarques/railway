@@ -1,7 +1,15 @@
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { createDb, loadKeyringFromEnv } from "@railway-like/db";
-import { DEPLOYMENTS_QUEUE, type CronTriggerJobData, type ReconcileJobData } from "@railway-like/shared";
+import {
+  BACKUP_QUEUE,
+  DEPLOYMENTS_QUEUE,
+  DOMAINS_QUEUE,
+  USAGE_QUEUE,
+  WEBHOOKS_QUEUE,
+  type CronTriggerJobData,
+  type ReconcileJobData,
+} from "@railway-like/shared";
 import { createEnvLoader } from "./reconciler/env-loader.js";
 import { PostgresDeploymentStore } from "./reconciler/postgres-store.js";
 import { createReconcileWorker } from "./reconciler/worker.js";
@@ -24,6 +32,7 @@ import { PostgresCronStore } from "./cron/postgres-store.js";
 import { registerCronSchedules } from "./cron/scheduler.js";
 import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
 import { createWebhookWorker } from "./webhooks/worker.js";
+import { observeWorker, startMetricsServer } from "./metrics.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -88,6 +97,7 @@ const worker = createReconcileWorker(connection, {
         })
       : undefined,
 });
+observeWorker(worker, DEPLOYMENTS_QUEUE);
 
 // Domain/TLS (architecture.md §6 and §8): there's no real DNS/ACME implementation yet, so the
 // provider is always the simulated one, regardless of the reconciler's runtime.
@@ -95,6 +105,7 @@ const domainWorker = createDomainWorker(connection, {
   store: new PostgresDomainStore(db),
   provider: new InMemoryDomainProvider(),
 });
+observeWorker(domainWorker, DOMAINS_QUEUE);
 
 // Volume backups (architecture.md §6): the backup provider still only simulates the volume
 // snapshot / logical dump step, but it now ships a real dump (volumeId + timestamp) to object
@@ -106,6 +117,7 @@ const backupWorker = createBackupWorker(connection, {
   store: new PostgresBackupStore(db),
   provider: new InMemoryBackupProvider(new LocalFsObjectStorageProvider()),
 });
+observeWorker(backupWorker, BACKUP_QUEUE);
 
 // Usage aggregator (architecture.md §3, §4): samples each instance's runtime state into
 // usage_events. The same runtime as the reconciler, read-only here. No sampling schedule is wired
@@ -115,6 +127,7 @@ const usageWorker = createUsageWorker(connection, {
   store: new PostgresUsageStore(db),
   runtime,
 });
+observeWorker(usageWorker, USAGE_QUEUE);
 
 // Billing (roadmap.md Phase 4): closes a billing period's usage_events into a draft invoice per
 // subscribed organization. No monthly schedule is wired here yet either -- see
@@ -130,6 +143,11 @@ const billingWorker = createBillingWorker(connection, {
 const webhookWorker = createWebhookWorker(connection, {
   store: new PostgresWebhookStore(db),
 });
+observeWorker(webhookWorker, WEBHOOKS_QUEUE);
+
+// Phase 3 (docs/roadmap.md) / architecture.md §9: scrape target for the job-level SLIs recorded
+// by observeWorker above. See docs/slos.md.
+const metricsServer = startMetricsServer(Number(process.env.METRICS_PORT ?? 9102));
 
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
@@ -142,6 +160,7 @@ async function shutdown(): Promise<void> {
   await deploymentsQueue.close();
   await cronQueue.close();
   await webhookWorker.close();
+  await metricsServer.close();
   await connection.quit();
   await pool.end();
   process.exit(0);
