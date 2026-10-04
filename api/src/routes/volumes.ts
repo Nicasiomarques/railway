@@ -137,4 +137,55 @@ export const volumeRoutes: FastifyPluginAsync<{ db: Db; backupQueue?: BackupQueu
       return reply.code(202).send(volume);
     },
   );
+
+  // Restores the volume from its most recent backup (architecture.md §6: "restore is an explicit,
+  // audited operation" — never automatic). Phase 3 (docs/roadmap.md) gap: restore existed only as
+  // a provider method with no way to actually trigger it; see docs/runbooks/backup-restore.md for
+  // when to use this.
+  app.post(
+    "/volumes/:volumeId/restore",
+    {
+      config: {
+        openapi: {
+          operationId: "restoreVolumeBackup",
+          tags: ["Volumes"],
+          summary: "Restores the volume from its most recent backup. Overwrites current data.",
+          pathSchema: volumeParams,
+          success: { status: 202, description: "Restore enqueued", schema: VolumeSchema },
+          errors: [403, 404],
+        },
+      },
+    },
+    async (request, reply) => {
+      const { volumeId } = volumeParams.parse(request.params);
+      const userId = request.auth!.userId;
+
+      const [volume] = await db.select().from(volumes).where(eq(volumes.id, volumeId));
+      if (!volume) throw new ApiError(404, "volume_not_found", "Volume not found.");
+
+      const { organizationId } = await requireInstanceAccess(db, userId, volume.serviceInstanceId, { write: true }).catch((err) => {
+        if (err instanceof ApiError && err.status === 403) throw err;
+        throw new ApiError(404, "volume_not_found", "Volume not found.");
+      });
+
+      // Audited unconditionally, even if the enqueue below fails: "someone asked to restore this
+      // volume" is the fact worth recording, regardless of whether the job ever ran.
+      await db.insert(auditLogs).values({
+        organizationId,
+        actorId: userId,
+        action: "volume.restore_triggered",
+        target: `volume:${volume.id}`,
+      });
+
+      if (backupQueue) {
+        try {
+          await backupQueue.enqueueRestoreBackup({ volumeId: volume.id });
+        } catch {
+          // Best effort, same reasoning as the backup trigger route above.
+        }
+      }
+
+      return reply.code(202).send(volume);
+    },
+  );
 };

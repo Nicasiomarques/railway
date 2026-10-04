@@ -3,21 +3,30 @@ import {
   BACKUP_QUEUE,
   DAILY_BACKUP_CRON_DEFAULT,
   DAILY_BACKUP_TICK_JOB,
+  RESTORE_BACKUP_JOB,
+  RESTORE_BACKUP_JOB_RETRY,
   RUN_BACKUP_JOB,
   RUN_BACKUP_JOB_RETRY,
+  restoreBackupJobId,
   runBackupJobId,
+  type RestoreBackupJobData,
   type RunBackupJobData,
 } from "@railway-like/shared";
 import type { BackupProvider } from "./adapter.js";
 import type { BackupStore } from "./store.js";
 
 // Constants and contract come from @railway-like/shared: the API produces jobs with the same rules.
-export { BACKUP_QUEUE, RUN_BACKUP_JOB, type RunBackupJobData };
+export { BACKUP_QUEUE, RUN_BACKUP_JOB, RESTORE_BACKUP_JOB, type RunBackupJobData, type RestoreBackupJobData };
 
 export const RUN_BACKUP_JOB_OPTIONS: JobsOptions = RUN_BACKUP_JOB_RETRY;
+export const RESTORE_BACKUP_JOB_OPTIONS: JobsOptions = RESTORE_BACKUP_JOB_RETRY;
 
 export async function enqueueRunBackup(queue: Queue<RunBackupJobData>, data: RunBackupJobData): Promise<void> {
   await queue.add(RUN_BACKUP_JOB, data, { ...RUN_BACKUP_JOB_OPTIONS, jobId: runBackupJobId(data) });
+}
+
+export async function enqueueRestoreBackup(queue: Queue<RestoreBackupJobData>, data: RestoreBackupJobData): Promise<void> {
+  await queue.add(RESTORE_BACKUP_JOB, data, { ...RESTORE_BACKUP_JOB_OPTIONS, jobId: restoreBackupJobId(data) });
 }
 
 // Enqueues one run-backup job per volume. This is the function a daily schedule ultimately calls
@@ -79,6 +88,39 @@ export async function handleRunBackupJob(
   return { kind: "failed", reason: `backup did not complete after ${budget.maxAttempts} attempts: ${result.reason}` };
 }
 
+// Mirrors processBackup: marks the volume "pending" for the duration of the restore attempt, then
+// "completed" or leaves it to the caller to mark "failed" on the last retry (same split as
+// processBackup/handleRunBackupJob, so a restore shows up in the same backupState the UI already
+// renders — there's no separate "restoring" state to add).
+export async function processRestore(deps: BackupWorkerDeps, volumeId: string): Promise<ProcessBackupResult> {
+  const volume = await deps.store.get(volumeId);
+  if (!volume) return { kind: "not_found" };
+
+  await deps.store.setBackupState(volume.id, volume.backupState, "pending");
+  const result = await deps.provider.restoreBackup(volumeId);
+  if (result.status === "completed") {
+    await deps.store.setBackupState(volume.id, "pending", "completed", new Date());
+    return { kind: "completed" };
+  }
+  return { kind: "failed", reason: result.reason ?? "restore failed" };
+}
+
+export async function handleRestoreBackupJob(
+  deps: BackupWorkerDeps,
+  data: RestoreBackupJobData,
+  budget: { attemptsMade: number; maxAttempts: number },
+): Promise<ProcessBackupResult> {
+  const result = await processRestore(deps, data.volumeId);
+  if (result.kind !== "failed") return result;
+
+  const lastAttempt = budget.attemptsMade + 1 >= budget.maxAttempts;
+  if (!lastAttempt) {
+    throw new Error(`${result.reason} (attempt ${budget.attemptsMade + 1} of ${budget.maxAttempts})`);
+  }
+  await deps.store.setBackupState(data.volumeId, "pending", "failed");
+  return { kind: "failed", reason: `restore did not complete after ${budget.maxAttempts} attempts: ${result.reason}` };
+}
+
 export function createBackupWorker(connection: ConnectionOptions, deps: BackupWorkerDeps): Worker {
   return new Worker(
     BACKUP_QUEUE,
@@ -89,6 +131,12 @@ export function createBackupWorker(connection: ConnectionOptions, deps: BackupWo
         if (!deps.queue || !deps.listVolumeIds) return { kind: "skipped" as const };
         await enqueueDailyBackup(deps.queue, await deps.listVolumeIds());
         return { kind: "scheduled" as const };
+      }
+      if (job.name === RESTORE_BACKUP_JOB) {
+        return handleRestoreBackupJob(deps, job.data as RestoreBackupJobData, {
+          attemptsMade: job.attemptsMade,
+          maxAttempts: job.opts.attempts ?? 1,
+        });
       }
       return handleRunBackupJob(deps, job.data as RunBackupJobData, {
         attemptsMade: job.attemptsMade,

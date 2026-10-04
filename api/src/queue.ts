@@ -16,18 +16,22 @@ import {
   ISSUE_CERTIFICATE_JOB_RETRY,
   RECONCILE_JOB,
   RECONCILE_JOB_RETRY,
+  RESTORE_BACKUP_JOB,
+  RESTORE_BACKUP_JOB_RETRY,
   RUN_BACKUP_JOB,
   RUN_BACKUP_JOB_RETRY,
   WEBHOOKS_QUEUE,
   decommissionEnvironmentJobId,
   issueCertificateJobId,
   reconcileJobId,
+  restoreBackupJobId,
   runBackupJobId,
   type CancelBuildJobData,
   type DecommissionEnvironmentJobData,
   type DeliverWebhookJobData,
   type IssueCertificateJobData,
   type ReconcileJobData,
+  type RestoreBackupJobData,
   type RunBackupJobData,
 } from "@railway-like/shared";
 import type { Db } from "./db/client.js";
@@ -82,6 +86,7 @@ export function createDomainQueue(redisUrl: string): DomainQueue & { close(): Pr
 // lifecycle doesn't share jobs with a domain's or a deployment's.
 export interface BackupQueue {
   enqueueRunBackup(data: RunBackupJobData): Promise<void>;
+  enqueueRestoreBackup(data: RestoreBackupJobData): Promise<void>;
 }
 
 export function createBackupQueue(redisUrl: string): BackupQueue & { close(): Promise<void> } {
@@ -91,6 +96,9 @@ export function createBackupQueue(redisUrl: string): BackupQueue & { close(): Pr
     async enqueueRunBackup(data) {
       // One job per volume: re-enqueueing a backup already queued doesn't duplicate the work.
       await queue.add(RUN_BACKUP_JOB, data, { ...RUN_BACKUP_JOB_RETRY, jobId: runBackupJobId(data) });
+    },
+    async enqueueRestoreBackup(data) {
+      await queue.add(RESTORE_BACKUP_JOB, data, { ...RESTORE_BACKUP_JOB_RETRY, jobId: restoreBackupJobId(data) });
     },
     async close() {
       await queue.close();
