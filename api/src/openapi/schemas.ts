@@ -195,6 +195,21 @@ export const WebhookSubscriptionSchema = z.object({
   updatedAt: timestamp,
 });
 
+// An extension is a webhook subscription with a manifest (name + description) attached; see
+// routes/extensions.ts. The secret is never included, same reasoning as WebhookSubscriptionSchema.
+export const ExtensionSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  projectId: uuid.nullable(),
+  name: z.string(),
+  description: z.string(),
+  url: z.string(),
+  events: z.array(z.string()),
+  isActive: z.boolean(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
 export const paginated = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ data: z.array(item), nextCursor: z.string().nullable() });
 

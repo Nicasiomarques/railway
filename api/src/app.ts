@@ -19,6 +19,7 @@ import { domainRoutes } from "./routes/domains.js";
 import { volumeRoutes } from "./routes/volumes.js";
 import { usageRoutes } from "./routes/usage.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { extensionRoutes } from "./routes/extensions.js";
 import { billingRoutes } from "./routes/billing.js";
 import { autoscalingRoutes } from "./routes/autoscaling.js";
 import { regionRoutes } from "./routes/regions.js";
@@ -105,6 +106,7 @@ export function buildApp(
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
       await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });
       await v1.register(webhookRoutes, { db });
+      await v1.register(extensionRoutes, { db });
       await v1.register(deploymentRoutes, {
         db,
         keyring: opts.keyring,

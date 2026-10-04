@@ -3,6 +3,7 @@ import { ciEnvCreateCommand, ciEnvDestroyCommand } from "./commands/ci-env.js";
 import { deployCommand } from "./commands/deploy.js";
 import { domainAddCommand, domainListCommand, domainRemoveCommand } from "./commands/domain.js";
 import { envListCommand, envSetCommand, envUnsetCommand } from "./commands/env.js";
+import { extensionsInstallCommand, extensionsListCommand, extensionsUninstallCommand } from "./commands/extensions.js";
 import { importCommand } from "./commands/import.js";
 import { initCommand } from "./commands/init.js";
 import { loginCommand } from "./commands/login.js";
@@ -133,6 +134,40 @@ program
   .argument("<file>", "Path to the manifest file")
   .option("--project <id>", "Project ID (overrides the project config)")
   .action(wrap((provider: string, file: string, opts: { project?: string }) => importCommand(provider, file, opts)));
+
+const extensions = program.command("extensions").description("Installs and manages extensions (webhook subscriptions with a manifest)");
+
+extensions
+  .command("list")
+  .description("Lists the organization's installed extensions")
+  .option("--organization <id>", "Organization ID (overrides the project config)")
+  .action(wrap((opts: { organization?: string }) => extensionsListCommand(opts)));
+
+extensions
+  .command("install")
+  .description("Installs an extension")
+  .argument("<name>", "Extension name")
+  .argument("<url>", "Webhook URL the extension receives deliveries at")
+  .option("--organization <id>", "Organization ID (overrides the project config)")
+  .option("--description <text>", "Extension description (defaults to its name)")
+  .option("--secret <secret>", "HMAC signing secret (min 16 characters)")
+  .option("--events <events>", "Comma-separated event types, e.g. deployment.status_changed")
+  .action(
+    wrap(
+      (
+        name: string,
+        url: string,
+        opts: { organization?: string; description?: string; secret?: string; events?: string },
+      ) => extensionsInstallCommand(name, url, opts),
+    ),
+  );
+
+extensions
+  .command("uninstall")
+  .description("Uninstalls an extension")
+  .argument("<extensionId>", "ID of the extension to uninstall")
+  .option("--organization <id>", "Organization ID (overrides the project config)")
+  .action(wrap((extensionId: string, opts: { organization?: string }) => extensionsUninstallCommand(extensionId, opts)));
 
 const domain = program.command("domain").description("Manages the configured service's domains");
 

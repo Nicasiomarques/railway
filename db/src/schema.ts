@@ -352,6 +352,11 @@ export const webhookSubscriptions = pgTable(
       .notNull()
       .references(() => organizations.id),
     projectId: uuid("project_id").references(() => projects.id),
+    // Set only through routes/extensions.ts (roadmap.md Phase 5 "extensions"): an extension is a
+    // webhook subscription with a manifest (name + description) attached, delivered through the
+    // exact same worker (workers/src/webhooks) as a plain subscription - null on one of those.
+    name: text("name"),
+    description: text("description"),
     url: text("url").notNull(),
     // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts);
     // never returned by the API once set (api/src/routes/webhooks.ts).
