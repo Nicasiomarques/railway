@@ -23,12 +23,15 @@ export function DeploymentPipeline({ status }: { status: DeploymentStatus }) {
   // A terminal Failed status doesn't say which step failed, so we don't fake progress for it --
   // the steps stay unlit and a single "Failed" marker is appended instead.
   const currentIndex = failed ? -1 : STEPS.findIndex((s) => s.status === status);
+  // Running is the pipeline's own terminal success state, not an in-flight step: it must render as
+  // "done" (steady), not "active" (pulsing forever), or a finished deployment reads as still working.
+  const isRunning = status === "Running";
 
   return (
     <ol className="pipeline" aria-label="Deployment pipeline">
       {STEPS.map((step, i) => {
         let state = "pending";
-        if (i < currentIndex) state = "done";
+        if (i < currentIndex || (isRunning && i === currentIndex)) state = "done";
         else if (i === currentIndex) state = "active";
         return (
           <li key={step.status} className={`pipeline-step ${state}`}>

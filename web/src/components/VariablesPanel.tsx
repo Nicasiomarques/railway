@@ -198,8 +198,8 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
                 />
                 secret
               </label>
-              <button type="submit" disabled={!newKeyValid}>
-                Save
+              <button type="submit" disabled={!newKeyValid || savingKey !== null}>
+                {savingKey === newVar.key.trim() ? "Saving…" : "Save"}
               </button>
               <button type="button" className="ghost" onClick={() => setAdding(false)}>
                 Cancel
