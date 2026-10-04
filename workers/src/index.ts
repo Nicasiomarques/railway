@@ -1,5 +1,7 @@
+import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { createDb, loadKeyringFromEnv } from "@railway-like/db";
+import { DEPLOYMENTS_QUEUE, type CronTriggerJobData, type ReconcileJobData } from "@railway-like/shared";
 import { createEnvLoader } from "./reconciler/env-loader.js";
 import { PostgresDeploymentStore } from "./reconciler/postgres-store.js";
 import { createReconcileWorker } from "./reconciler/worker.js";
@@ -13,6 +15,8 @@ import { createDomainWorker } from "./domain/worker.js";
 import { InMemoryBackupProvider } from "./backup/in-memory.js";
 import { PostgresBackupStore } from "./backup/postgres-store.js";
 import { createBackupWorker } from "./backup/worker.js";
+import { PostgresCronStore } from "./cron/postgres-store.js";
+import { registerCronSchedules } from "./cron/scheduler.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -45,10 +49,22 @@ function parseEgressAllow(raw: string | undefined): { cidr: string; port: number
 // One runtime per process: the reconciler and the provisioning saga share the same client.
 const runtime = runtimeKind === "k8s" ? K8sRuntime.fromContext(process.env.K8S_CONTEXT) : new InMemoryRuntime();
 
+// Cron (roadmap Phase 4): producer-side Queues for the same DEPLOYMENTS_QUEUE the reconcile Worker
+// below consumes from -- one per job data shape only for typing purposes (BullMQ Queue instances are
+// otherwise interchangeable handles onto the same named queue/connection). Used to register each
+// cron instance's repeatable job (registerCronSchedules) and, inside the Worker, to re-enqueue a
+// RECONCILE_JOB once a cron trigger has created its Deployment (workers/src/cron/worker.ts). See
+// that module for what "running a cron job" means here and why.
+const deploymentsQueue = new Queue<ReconcileJobData>(DEPLOYMENTS_QUEUE, { connection });
+const cronQueue = new Queue<CronTriggerJobData>(DEPLOYMENTS_QUEUE, { connection });
+const cronStore = new PostgresCronStore(db);
+await registerCronSchedules(cronQueue, await cronStore.listCronInstances());
+
 const worker = createReconcileWorker(connection, {
   store: new PostgresDeploymentStore(db, createEnvLoader(db, keyring)),
   runtime,
   provisioning: { store: new PostgresEnvironmentStore(db), runtime },
+  cron: { store: cronStore, reconcileQueue: deploymentsQueue },
   builder:
     runtimeKind === "k8s" && buildRegistry
       ? K8sBuilder.fromContext(process.env.K8S_CONTEXT, {
@@ -87,6 +103,8 @@ async function shutdown(): Promise<void> {
   await worker.close();
   await domainWorker.close();
   await backupWorker.close();
+  await deploymentsQueue.close();
+  await cronQueue.close();
   await connection.quit();
   await pool.end();
   process.exit(0);

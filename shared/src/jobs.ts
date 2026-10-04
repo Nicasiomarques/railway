@@ -115,3 +115,29 @@ export const DAILY_BACKUP_TICK_JOB = "daily-backup-tick";
 
 // Default daily schedule for `scheduleDailyBackups`: once a day at 03:00 UTC (low-traffic window).
 export const DAILY_BACKUP_CRON_DEFAULT = "0 3 * * *";
+
+// Cron services (roadmap Phase 4): each service_instances row with kind "cron" and a `schedule`
+// gets one BullMQ *repeatable* job (see workers/src/cron/scheduler.ts), registered directly with
+// that instance's own cron expression as `repeat.pattern` -- unlike the backup tick above, there's
+// no shared fixed schedule to fan out from: every instance can run on its own cron expression.
+// Goes on the same queue as deployments: firing a cron instance is implemented as "redeploy the
+// instance's last known build", which the reconciler already knows how to converge on.
+export const CRON_TRIGGER_JOB = "cron-trigger";
+
+export interface CronTriggerJobData {
+  serviceInstanceId: string;
+}
+
+// One repeatable registration per instance: re-registering with the same jobId updates the existing
+// repeat rule instead of adding a duplicate one.
+export function cronTriggerJobId(data: CronTriggerJobData): string {
+  return `cron-trigger-${data.serviceInstanceId}`;
+}
+
+// A misfire isn't worth hammering: the next scheduled tick arrives soon enough on its own.
+export const CRON_TRIGGER_JOB_RETRY = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 50,
+} as const;
