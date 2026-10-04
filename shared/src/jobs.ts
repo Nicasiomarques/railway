@@ -82,3 +82,123 @@ export const ISSUE_CERTIFICATE_JOB_RETRY = {
   removeOnComplete: true,
   removeOnFail: 100,
 } as const;
+
+// Volume backups (architecture.md §6: "PVC + scheduled backup (volume snapshot + logical dump)
+// to object storage"). Own queue: a backup's lifecycle has no relation to a domain's or a deployment's.
+export const BACKUP_QUEUE = "backups";
+export const RUN_BACKUP_JOB = "run-backup";
+
+export interface RunBackupJobData {
+  volumeId: string;
+}
+
+// One job per volume per enqueue call: re-enqueuing a volume already queued doesn't duplicate the work.
+export function runBackupJobId(data: RunBackupJobData): string {
+  return `run-backup-${data.volumeId}`;
+}
+
+// Unlike domain issuance there's no external propagation to wait out: a backup attempt either
+// completes or fails. Retries only cover a transient failure (storage momentarily unreachable),
+// so the budget is short, with exponential backoff instead of a fixed interval.
+export const RUN_BACKUP_JOB_RETRY = {
+  attempts: 5,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+// Internal "tick" job name used to wire a daily schedule to the backup queue (see
+// workers/src/backup/worker.ts: scheduleDailyBackups/createBackupWorker). Not part of the
+// API/worker job contract in the same sense as RUN_BACKUP_JOB: nothing produces this job today
+// outside of scheduleDailyBackups itself.
+export const DAILY_BACKUP_TICK_JOB = "daily-backup-tick";
+
+// Default daily schedule for `scheduleDailyBackups`: once a day at 03:00 UTC (low-traffic window).
+export const DAILY_BACKUP_CRON_DEFAULT = "0 3 * * *";
+
+// Usage aggregator (architecture.md §3: "Usage aggregator | samples -> usage_events per
+// project/service | feeds future billing"; §4: "usage_events append-only, aggregated in windows
+// (1 min -> hour -> day)"). Own queue: sampling has no relation to a deployment's, a domain's or
+// a volume's lifecycle.
+export const USAGE_QUEUE = "usage";
+export const SAMPLE_USAGE_JOB = "sample-usage";
+
+export interface SampleUsageJobData {
+  serviceInstanceId: string;
+}
+
+// One job per instance per enqueue call: re-enqueuing an instance already queued doesn't
+// duplicate the sample (the jobId is scoped to the tick time, see sampleUsageJobId below).
+export function sampleUsageJobId(data: SampleUsageJobData & { at?: number }): string {
+  return `sample-usage-${data.serviceInstanceId}-${data.at ?? Date.now()}`;
+}
+
+// Like a backup attempt, a sample either succeeds or fails outright (no external propagation to
+// wait out), so the budget is short, with exponential backoff for a transient failure (runtime API
+// momentarily unreachable).
+export const SAMPLE_USAGE_JOB_RETRY = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 2000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+// Internal "tick" job name used to wire a recurring schedule to the usage queue (see
+// workers/src/usage/worker.ts: scheduleUsageSampling/createUsageWorker). Not part of the
+// API/worker job contract in the same sense as SAMPLE_USAGE_JOB: nothing produces this job today
+// outside of scheduleUsageSampling itself.
+export const USAGE_SAMPLING_TICK_JOB = "usage-sampling-tick";
+
+// Default sampling schedule for `scheduleUsageSampling`: every minute, matching the finest
+// aggregation window in architecture.md §4 ("1 min -> hour -> day").
+export const USAGE_SAMPLING_CRON_DEFAULT = "* * * * *";
+
+// Cron services (roadmap Phase 4): each service_instances row with kind "cron" and a `schedule`
+// gets one BullMQ *repeatable* job (see workers/src/cron/scheduler.ts), registered directly with
+// that instance's own cron expression as `repeat.pattern` -- unlike the backup tick above, there's
+// no shared fixed schedule to fan out from: every instance can run on its own cron expression.
+// Goes on the same queue as deployments: firing a cron instance is implemented as "redeploy the
+// instance's last known build", which the reconciler already knows how to converge on.
+export const CRON_TRIGGER_JOB = "cron-trigger";
+
+export interface CronTriggerJobData {
+  serviceInstanceId: string;
+}
+
+// One repeatable registration per instance: re-registering with the same jobId updates the existing
+// repeat rule instead of adding a duplicate one.
+export function cronTriggerJobId(data: CronTriggerJobData): string {
+  return `cron-trigger-${data.serviceInstanceId}`;
+}
+
+// A misfire isn't worth hammering: the next scheduled tick arrives soon enough on its own.
+export const CRON_TRIGGER_JOB_RETRY = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 5000 },
+  removeOnComplete: true,
+  removeOnFail: 50,
+} as const;
+
+// Outbound webhooks (roadmap.md Phase 5: "Webhooks and extensions"). Own queue: a delivery's
+// lifecycle has no relation to a domain's, a deployment's or a backup's. Unlike those queues,
+// there's no stable per-resource jobId here: each enqueue call is one independent delivery
+// attempt of one event to one subscription, and re-enqueuing the same (subscription, event)
+// pair later (e.g. another status change) must NOT be deduped against an earlier delivery.
+export const WEBHOOKS_QUEUE = "webhooks";
+export const DELIVER_WEBHOOK_JOB = "deliver-webhook";
+
+export interface DeliverWebhookJobData {
+  subscriptionId: string;
+  event: string;
+  payload: Record<string, unknown>;
+}
+
+// A flaky third-party endpoint shouldn't need a human to retry it: BullMQ owns the retry
+// (attempts/backoff on the job itself), same as the other queues; deliver.ts has no retry
+// logic of its own, it just throws on anything but a 2xx response.
+export const DELIVER_WEBHOOK_JOB_RETRY = {
+  attempts: 8,
+  backoff: { type: "exponential", delay: 3000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;

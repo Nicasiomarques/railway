@@ -16,6 +16,7 @@
     "start": "node --env-file-if-exists=.env dist/index.js"
   },
   "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
     "@railway-like/db": "workspace:*",
     "@railway-like/shared": "workspace:*",
     "@stoplight/elements": "9.0.27",

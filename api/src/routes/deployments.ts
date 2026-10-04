@@ -8,7 +8,7 @@ import { sealEnvSnapshot, type Keyring } from "../crypto/envelope.js";
 import { ApiError } from "../errors.js";
 import { runIdempotent } from "../idempotency.js";
 import { resolveInstanceEnv } from "../env/resolve.js";
-import type { DeploymentQueue } from "../queue.js";
+import type { DeploymentQueue, WebhookQueue } from "../queue.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, buildLogs, deploymentEvents, deployments, envSnapshots, serviceInstances, services } from "../db/schema.js";
 import { BuildLogSchema, DeploymentDetailSchema, DeploymentSchema, MetricsSnapshotSchema, listOf } from "../openapi/schemas.js";
@@ -124,6 +124,13 @@ export async function createQueuedDeployment(
     commitSha?: string | null;
     branch?: string | null;
     author?: string | null;
+    // Rollback (architecture.md §5.2) must restore the EnvSnapshot of the version it targets, not the
+    // instance's current variables — that's what makes it a rollback instead of a redeploy. Passing an
+    // existing snapshot id here reuses it verbatim instead of resolving+persisting a new one; omitting
+    // it (manual creation, GitHub push) keeps the original behavior of snapshotting the current env.
+    envSnapshotId?: string | null;
+    // Set only for a rollback: the deployment it is reverting to (`rollback_of_id`).
+    rollbackOfId?: string | null;
   },
 ): Promise<{ created: DeploymentRow; cancelledIds: string[] }> {
   const { instanceId } = input;
@@ -142,14 +149,20 @@ export async function createQueuedDeployment(
     .where(eq(deployments.serviceInstanceId, instanceId));
   const versionNo = last + 1;
 
-  // Immutable snapshot: a rollback returns to this set, not to the variables' current state.
-  const env = await resolveInstanceEnv(tx, keyring, instanceId);
-  const snapshotId = randomUUID();
-  await tx.insert(envSnapshots).values({
-    id: snapshotId,
-    serviceInstanceId: instanceId,
-    payloadEnc: sealEnvSnapshot(keyring, snapshotId, Object.fromEntries(env.map((v) => [v.key, v.value]))),
-  });
+  // Immutable snapshot: a rollback returns to this set, not to the variables' current state. When
+  // `envSnapshotId` is given (rollback), reuse that snapshot instead of resolving the current env.
+  let snapshotId: string;
+  if (input.envSnapshotId) {
+    snapshotId = input.envSnapshotId;
+  } else {
+    const env = await resolveInstanceEnv(tx, keyring, instanceId);
+    snapshotId = randomUUID();
+    await tx.insert(envSnapshots).values({
+      id: snapshotId,
+      serviceInstanceId: instanceId,
+      payloadEnc: sealEnvSnapshot(keyring, snapshotId, Object.fromEntries(env.map((v) => [v.key, v.value]))),
+    });
+  }
 
   // The new deployment supersedes the ones still in flight (architecture.md §5.2, step 3).
   const inFlight = await tx
@@ -181,6 +194,7 @@ export async function createQueuedDeployment(
       branch: input.branch ?? null,
       author: input.author ?? null,
       envSnapshotId: snapshotId,
+      rollbackOfId: input.rollbackOfId ?? null,
     })
     .returning();
   await tx.insert(deploymentEvents).values({ deploymentId: created.id, fromStatus: null, toStatus: "Queued", reason: "created" });
@@ -197,15 +211,75 @@ function toResponse(d: DeploymentRow) {
     trigger: d.trigger,
     imageDigest: d.imageDigest,
     commitSha: d.commitSha,
+    rollbackOfId: d.rollbackOfId,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };
 }
 
-export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; queue?: DeploymentQueue; runtime?: RuntimeReader }> = async (
-  app,
-  { db, keyring, queue, runtime },
-) => {
+export const deploymentRoutes: FastifyPluginAsync<{
+  db: Db;
+  keyring: Keyring;
+  queue?: DeploymentQueue;
+  runtime?: RuntimeReader;
+  webhookQueue?: WebhookQueue;
+}> = async (app, { db, keyring, queue, runtime, webhookQueue }) => {
+  // Best effort, same spirit as the cancel-build enqueue below: a subscriber's queue being down
+  // must never fail (or roll back) the deployment that triggered the notification.
+  function notifyWebhook(
+    organizationId: string,
+    projectId: string,
+    dep: Pick<DeploymentRow, "id" | "serviceInstanceId" | "versionNo" | "status">,
+  ): void {
+    webhookQueue
+      ?.enqueueWebhookDeliveries(organizationId, projectId, "deployment.status_changed", {
+        deploymentId: dep.id,
+        serviceInstanceId: dep.serviceInstanceId,
+        status: dep.status,
+        versionNo: dep.versionNo,
+      })
+      .catch((err) => {
+        app.log.warn({ err, deploymentId: dep.id }, "deployment.status_changed webhook not enqueued");
+      });
+  }
+
+  // Shared by the manual-create and rollback routes: enqueues the reconciler job for a freshly
+  // created Queued deployment, and if that fails, marks it Failed instead of leaving it stuck
+  // forever (the worker will never see a job for it). Enqueuing after the commit is required: the
+  // worker reads the row, so it must already be visible.
+  async function enqueueReconcileOrFail(
+    dep: Pick<DeploymentRow, "id" | "serviceInstanceId" | "versionNo">,
+    organizationId: string,
+    projectId: string,
+  ): Promise<void> {
+    try {
+      if (!queue) throw new Error("deployment queue not configured");
+      await queue.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
+      notifyWebhook(organizationId, projectId, { ...dep, status: "Queued" });
+    } catch {
+      await db.transaction(async (tx) => {
+        const updated = await tx
+          .update(deployments)
+          .set({ status: "Failed", updatedAt: new Date() })
+          .where(and(eq(deployments.id, dep.id), eq(deployments.status, "Queued")))
+          .returning({ id: deployments.id });
+        if (updated.length > 0) {
+          await tx.insert(deploymentEvents).values({
+            deploymentId: dep.id,
+            fromStatus: "Queued",
+            toStatus: "Failed",
+            reason: "failed to enqueue",
+          });
+        }
+      });
+      throw new ApiError(
+        503,
+        "queue_unavailable",
+        "Could not enqueue the deployment; it was marked as Failed. Create a new one.",
+      );
+    }
+  }
+
   app.post(
     "/services/:instanceId/deployments",
     {
@@ -226,7 +300,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       const { instanceId } = instanceParams.parse(request.params);
       const body = createDeploymentBody.parse(request.body);
       const userId = request.auth!.userId;
-      const { organizationId } = await requireInstanceAccess(db, userId, instanceId, { write: true });
+      const { organizationId, projectId } = await requireInstanceAccess(db, userId, instanceId, { write: true });
 
       const [source] = await db
         .select({ source: services.source })
@@ -267,32 +341,7 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       // Enqueues after the commit: the worker needs to see the row. Retrying with the same Idempotency-Key
       // enqueues again; the jobId per version deduplicates, and the reconciler is idempotent.
       const dep = result.body as ReturnType<typeof toResponse>;
-      try {
-        if (!queue) throw new Error("deployment queue not configured");
-        await queue.enqueueReconcile({ serviceInstanceId: dep.serviceInstanceId, versionNo: dep.versionNo });
-      } catch {
-        // Without a job the deployment would stay Queued forever. Marks it as Failed so the state reflects reality.
-        await db.transaction(async (tx) => {
-          const updated = await tx
-            .update(deployments)
-            .set({ status: "Failed", updatedAt: new Date() })
-            .where(and(eq(deployments.id, dep.id), eq(deployments.status, "Queued")))
-            .returning({ id: deployments.id });
-          if (updated.length > 0) {
-            await tx.insert(deploymentEvents).values({
-              deploymentId: dep.id,
-              fromStatus: "Queued",
-              toStatus: "Failed",
-              reason: "failed to enqueue",
-            });
-          }
-        });
-        throw new ApiError(
-          503,
-          "queue_unavailable",
-          "Could not enqueue the deployment; it was marked as Failed. Create a new one.",
-        );
-      }
+      await enqueueReconcileOrFail(dep, organizationId, projectId);
 
       // Deletes the builds of the deployments this version superseded. Best effort: if it fails, the Job dies via timeout.
       for (const id of cancelledIds) {
@@ -428,7 +477,93 @@ export const deploymentRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring; qu
       await queue?.enqueueCancelBuild({ deploymentId, serviceInstanceId: dep.serviceInstanceId }).catch((err) => {
         request.log.warn({ err, deploymentId }, "build cancellation not enqueued; the Job will expire via timeout");
       });
+      notifyWebhook(access.organizationId, access.projectId, { ...cancelled });
       return toResponse(cancelled);
+    },
+  );
+
+  // Rolls back to a previous version: a new deployment (trigger "rollback") reusing that version's
+  // image/commit and EnvSnapshot verbatim — no rebuild (architecture.md §5.2, §10). `:deploymentId`
+  // here is the deployment to roll back TO; the new rollback deployment lands as the latest version
+  // on the same instance, same as the manual-create route.
+  //
+  // Registered as "/deployments/:deploymentId([^:]+)::rollback", not ".../:deploymentId/rollback",
+  // to match the CLI's literal call to POST /v1/deployments/{id}:rollback (architecture.md §10: actions
+  // as `:verb` when they aren't CRUD). Verified with app.inject (see deployments.test.ts): Fastify/
+  // find-my-way treats a bare second ":" right after a param as the start of *another* param, so
+  // ":deploymentId:rollback" doesn't split into {deploymentId}+"rollback" — it swallows the whole
+  // ":rollback" suffix into deploymentId's matched value. Constraining the param with a regex
+  // ("([^:]+)", i.e. "not a colon") stops it from crossing that boundary, and the trailing "::" is
+  // find-my-way's own escape sequence for a literal single ":" in the URL. toOpenApiPath
+  // (openapi/index.ts) knows this convention and renders the documented path as
+  // "/v1/deployments/{deploymentId}:rollback".
+  //
+  // Idempotency: no Idempotency-Key here, unlike the manual-create route. Retrying a rollback just
+  // creates another rollback deployment (another version, same image/snapshot) — that's an acceptable,
+  // observable side effect for a POST with no body to dedupe by, not a correctness bug, so the extra
+  // mechanism didn't seem worth it.
+  app.post(
+    "/deployments/:deploymentId([^:]+)::rollback",
+    {
+      config: {
+        openapi: {
+          operationId: "rollbackDeployment",
+          tags: ["Deployments"],
+          summary: "Rolls back to a previous Running or Superseded version; reuses its image and EnvSnapshot, no rebuild",
+          pathSchema: deploymentParams,
+          success: { status: 202, description: "Rollback deployment queued", schema: DeploymentSchema },
+          errors: [403, 404, 409, 503],
+        },
+      },
+    },
+    async (request, reply) => {
+      const { deploymentId } = deploymentParams.parse(request.params);
+      const notFound = () => new ApiError(404, "deployment_not_found", "Deployment not found.");
+      const [target] = await db.select().from(deployments).where(eq(deployments.id, deploymentId));
+      if (!target) throw notFound();
+
+      const access = await requireInstanceAccess(db, request.auth!.userId, target.serviceInstanceId, { write: true }).catch((err) => {
+        if (err instanceof ApiError && err.status === 403) throw err;
+        throw notFound();
+      });
+
+      // Mirrors architecture.md §5.2: a rollback target is a previous version that actually ran.
+      if (target.status !== "Running" && target.status !== "Superseded") {
+        throw new ApiError(
+          409,
+          "not_rollback_target",
+          `Can only roll back to a Running or Superseded version, not ${target.status}.`,
+        );
+      }
+
+      const cancelledIds: string[] = [];
+      const created = await db.transaction(async (tx) => {
+        const { created: dep, cancelledIds: cancelled } = await createQueuedDeployment(tx, keyring, {
+          instanceId: target.serviceInstanceId,
+          trigger: "rollback",
+          imageDigest: target.imageDigest,
+          commitSha: target.commitSha,
+          envSnapshotId: target.envSnapshotId,
+          rollbackOfId: target.id,
+        });
+        cancelledIds.push(...cancelled);
+        await tx.insert(auditLogs).values({
+          organizationId: access.organizationId,
+          actorId: request.auth!.userId,
+          action: "deployment.rollback",
+          target: `deployment:${dep.id}`,
+        });
+        return dep;
+      });
+
+      await enqueueReconcileOrFail(created, access.organizationId, access.projectId);
+
+      // Deletes the builds of the deployments this version superseded. Best effort: if it fails, the Job dies via timeout.
+      for (const id of cancelledIds) {
+        await queue?.enqueueCancelBuild({ deploymentId: id, serviceInstanceId: target.serviceInstanceId }).catch(() => undefined);
+      }
+
+      return reply.code(202).send(toResponse(created));
     },
   );
 

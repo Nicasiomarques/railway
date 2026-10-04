@@ -1,5 +1,7 @@
+import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import { createDb, loadKeyringFromEnv } from "@railway-like/db";
+import { DEPLOYMENTS_QUEUE, type CronTriggerJobData, type ReconcileJobData } from "@railway-like/shared";
 import { createEnvLoader } from "./reconciler/env-loader.js";
 import { PostgresDeploymentStore } from "./reconciler/postgres-store.js";
 import { createReconcileWorker } from "./reconciler/worker.js";
@@ -10,6 +12,16 @@ import { PostgresEnvironmentStore } from "./provisioning/postgres-store.js";
 import { InMemoryDomainProvider } from "./domain/in-memory.js";
 import { PostgresDomainStore } from "./domain/postgres-store.js";
 import { createDomainWorker } from "./domain/worker.js";
+import { InMemoryBackupProvider } from "./backup/in-memory.js";
+import { PostgresBackupStore } from "./backup/postgres-store.js";
+import { createBackupWorker } from "./backup/worker.js";
+import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
+import { PostgresUsageStore } from "./usage/postgres-store.js";
+import { createUsageWorker } from "./usage/worker.js";
+import { PostgresCronStore } from "./cron/postgres-store.js";
+import { registerCronSchedules } from "./cron/scheduler.js";
+import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
+import { createWebhookWorker } from "./webhooks/worker.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -42,10 +54,22 @@ function parseEgressAllow(raw: string | undefined): { cidr: string; port: number
 // One runtime per process: the reconciler and the provisioning saga share the same client.
 const runtime = runtimeKind === "k8s" ? K8sRuntime.fromContext(process.env.K8S_CONTEXT) : new InMemoryRuntime();
 
+// Cron (roadmap Phase 4): producer-side Queues for the same DEPLOYMENTS_QUEUE the reconcile Worker
+// below consumes from -- one per job data shape only for typing purposes (BullMQ Queue instances are
+// otherwise interchangeable handles onto the same named queue/connection). Used to register each
+// cron instance's repeatable job (registerCronSchedules) and, inside the Worker, to re-enqueue a
+// RECONCILE_JOB once a cron trigger has created its Deployment (workers/src/cron/worker.ts). See
+// that module for what "running a cron job" means here and why.
+const deploymentsQueue = new Queue<ReconcileJobData>(DEPLOYMENTS_QUEUE, { connection });
+const cronQueue = new Queue<CronTriggerJobData>(DEPLOYMENTS_QUEUE, { connection });
+const cronStore = new PostgresCronStore(db);
+await registerCronSchedules(cronQueue, await cronStore.listCronInstances());
+
 const worker = createReconcileWorker(connection, {
   store: new PostgresDeploymentStore(db, createEnvLoader(db, keyring)),
   runtime,
   provisioning: { store: new PostgresEnvironmentStore(db), runtime },
+  cron: { store: cronStore, reconcileQueue: deploymentsQueue },
   builder:
     runtimeKind === "k8s" && buildRegistry
       ? K8sBuilder.fromContext(process.env.K8S_CONTEXT, {
@@ -70,11 +94,43 @@ const domainWorker = createDomainWorker(connection, {
   provider: new InMemoryDomainProvider(),
 });
 
+// Volume backups (architecture.md §6): the backup provider still only simulates the volume
+// snapshot / logical dump step, but it now ships a real dump (volumeId + timestamp) to object
+// storage through LocalFsObjectStorageProvider (OBJECT_STORAGE_DIR, default
+// /tmp/railway-like-object-storage) instead of only an in-memory Map. No daily schedule is wired
+// here yet either — see workers/src/backup/worker.ts (scheduleDailyBackups) for how that would be
+// connected.
+const backupWorker = createBackupWorker(connection, {
+  store: new PostgresBackupStore(db),
+  provider: new InMemoryBackupProvider(new LocalFsObjectStorageProvider()),
+});
+
+// Usage aggregator (architecture.md §3, §4): samples each instance's runtime state into
+// usage_events. The same runtime as the reconciler, read-only here. No sampling schedule is wired
+// here yet either — see workers/src/usage/worker.ts (scheduleUsageSampling) for how that would be
+// connected.
+const usageWorker = createUsageWorker(connection, {
+  store: new PostgresUsageStore(db),
+  runtime,
+});
+
+// Outbound webhooks (roadmap.md Phase 5): delivery via Node's native fetch (FetchWebhookTransport,
+// the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
+// subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
+const webhookWorker = createWebhookWorker(connection, {
+  store: new PostgresWebhookStore(db),
+});
+
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
   await worker.close();
   await domainWorker.close();
+  await backupWorker.close();
+  await usageWorker.close();
+  await deploymentsQueue.close();
+  await cronQueue.close();
+  await webhookWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);

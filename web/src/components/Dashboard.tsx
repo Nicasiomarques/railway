@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, tokenStore, type Organization } from "../api";
+import { NewServiceWizard } from "./NewServiceWizard";
 import { ProjectDetail } from "./ProjectDetail";
 import { ProjectList } from "./ProjectList";
+import { UsagePanel } from "./UsagePanel";
 
 export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const orgs = useQuery({
@@ -11,6 +13,7 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   });
   const [orgId, setOrgId] = useState<string | null>(null);
   const [project, setProject] = useState<{ id: string; name: string } | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
 
   const selectedOrg = orgs.data?.find((o) => o.id === orgId) ?? orgs.data?.[0];
 
@@ -34,6 +37,7 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
               ))}
             </select>
           )}
+          <button onClick={() => setShowWizard(true)}>+ New</button>
           <button
             className="ghost"
             onClick={() => {
@@ -50,7 +54,12 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         {orgs.isLoading && <p className="muted">Loading...</p>}
         {orgs.data && orgs.data.length === 0 && <p className="muted">No organizations for this token.</p>}
 
-        {selectedOrg && !project && <ProjectList org={selectedOrg} onOpen={setProject} />}
+        {selectedOrg && !project && (
+          <>
+            <ProjectList org={selectedOrg} onOpen={setProject} />
+            <UsagePanel org={selectedOrg} />
+          </>
+        )}
         {selectedOrg && project && (
           <ProjectDetail
             projectId={project.id}
@@ -60,6 +69,18 @@ export function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           />
         )}
       </main>
+
+      {showWizard && (
+        <NewServiceWizard
+          defaultOrgId={selectedOrg?.id ?? null}
+          onClose={() => setShowWizard(false)}
+          onCreated={(createdProject) => {
+            setOrgId(createdProject.organizationId);
+            setProject({ id: createdProject.id, name: createdProject.name });
+            setShowWizard(false);
+          }}
+        />
+      )}
     </div>
   );
 }

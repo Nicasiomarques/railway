@@ -25,9 +25,16 @@ const softDelete = {
 
 export const membershipRole = pgEnum("membership_role", ["owner", "admin", "member", "viewer"]);
 export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom"]);
-export const serviceSource = pgEnum("service_source", ["github_repo", "image", "template"]);
+export const serviceSource = pgEnum("service_source", [
+  "github_repo",
+  "image",
+  "template",
+  "postgres_template",
+  "redis_template",
+]);
 export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES);
-export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy"]);
+// "cron": created by the cron scheduler (workers/src/cron) when a cron service's schedule fires.
+export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy", "cron"]);
 export const domainType = pgEnum("domain_type", ["auto", "custom"]);
 export const variableScope = pgEnum("variable_scope", ["project", "environment", "service_instance"]);
 export const environmentProvisioningStatus = pgEnum("environment_provisioning_status", [
@@ -123,6 +130,8 @@ export const services = pgTable(
       .notNull()
       .references(() => projects.id),
     name: text("name").notNull(),
+    // Plain text, not a pgEnum: the allowed set ("web" | "worker" | "postgres" | "redis" | "cron")
+    // is validated at the API layer (api/src/routes/services.ts), not enforced by the column.
     kind: text("kind").notNull(),
     source: serviceSource("source").notNull(),
     // Only for source github_repo: clone URL. Commits arrive via the deployment.
@@ -149,6 +158,9 @@ export const serviceInstances = pgTable(
     replicas: integer("replicas").notNull().default(1),
     healthCheck: jsonb("health_check"),
     overrides: jsonb("overrides"),
+    // Cron expression (e.g. "0 3 * * *"). Only relevant when the owning service's kind is "cron";
+    // null otherwise. See workers/src/cron/scheduler.ts.
+    schedule: text("schedule"),
     ...timestamps,
     ...softDelete,
   },
@@ -262,6 +274,71 @@ export const domains = pgTable(
     ...timestamps,
   },
   (t) => [uniqueIndex("domains_hostname_idx").on(t.hostname)],
+);
+
+// Volumes attach to a service instance (architecture.md §6: stateful workloads get a PVC + a
+// scheduled backup to object storage). backupState mirrors the backup worker's state machine
+// ("none" until the first run; "pending" while a backup is in flight; "completed"/"failed" after).
+export const volumes = pgTable(
+  "volumes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    serviceInstanceId: uuid("service_instance_id")
+      .notNull()
+      .references(() => serviceInstances.id),
+    mountPath: text("mount_path").notNull(),
+    sizeGb: integer("size_gb").notNull(),
+    backupState: text("backup_state").notNull().default("none"),
+    lastBackupAt: timestamp("last_backup_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index("volumes_instance_idx").on(t.serviceInstanceId)],
+);
+
+// Outbound webhook subscriptions (roadmap.md Phase 5: "Webhooks and extensions"). The inverse of
+// github_webhook_deliveries/githubRoutes' HMAC check: here WE sign the payload with `secret` the
+// same way, for a third party to verify. `projectId` null means "every project in the organization".
+export const webhookSubscriptions = pgTable(
+  "webhook_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    url: text("url").notNull(),
+    // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts);
+    // never returned by the API once set (api/src/routes/webhooks.ts).
+    secret: text("secret").notNull(),
+    // Event types this subscription wants, e.g. ["deployment.status_changed"]. Not an enum: new
+    // event types are expected to be added later without a migration.
+    events: text("events").array().notNull().default([]),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [
+    index("webhook_subscriptions_org_idx").on(t.organizationId),
+    index("webhook_subscriptions_project_idx").on(t.projectId),
+  ],
+);
+
+// Delivery attempts log (one row per attempt), in the spirit of audit_logs: lets an operator see
+// why a subscriber's endpoint isn't receiving events.
+export const webhookDeliveries = pgTable(
+  "webhook_deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => webhookSubscriptions.id),
+    event: text("event").notNull(),
+    payload: jsonb("payload").notNull(),
+    responseStatus: integer("response_status"),
+    attempt: integer("attempt").notNull().default(1),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("webhook_deliveries_subscription_idx").on(t.subscriptionId)],
 );
 
 export const connections = pgTable(

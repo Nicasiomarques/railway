@@ -7,6 +7,11 @@ const uuid = z.string().uuid();
 const timestamp = z.string().datetime({ offset: true });
 const json = z.unknown();
 
+export const LoginResponseSchema = z.object({
+  token: z.string(),
+  userId: uuid,
+});
+
 export const ProblemSchema = z.object({
   type: z.string(),
   title: z.string(),
@@ -62,8 +67,8 @@ export const ServiceSchema = z.object({
   id: uuid,
   projectId: uuid,
   name: z.string(),
-  kind: z.enum(["web", "worker", "postgres", "redis"]),
-  source: z.enum(["github_repo", "image", "template"]),
+  kind: z.enum(["web", "worker", "postgres", "redis", "cron"]),
+  source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
   rootDir: z.string(),
   repoUrl: z.string().nullable(),
   detectionSnapshot: json.nullable(),
@@ -80,6 +85,8 @@ export const ServiceInstanceSchema = z.object({
   replicas: z.number().int(),
   healthCheck: json.nullable(),
   overrides: json.nullable(),
+  // Cron expression (e.g. "0 3 * * *"); only set when the owning service's kind is "cron".
+  schedule: z.string().nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
   deletedAt: timestamp.nullable(),
@@ -91,6 +98,7 @@ export const ServiceInstanceSummarySchema = z.object({
   environmentId: uuid,
   environmentName: z.string().nullable(),
   replicas: z.number().int(),
+  schedule: z.string().nullable(),
 });
 
 export const ServiceWithInstancesSchema = ServiceSchema.extend({
@@ -143,6 +151,29 @@ export const DomainSchema = z.object({
   updatedAt: timestamp,
 });
 
+export const VolumeSchema = z.object({
+  id: uuid,
+  serviceInstanceId: uuid,
+  mountPath: z.string(),
+  sizeGb: z.number().int(),
+  backupState: z.enum(["none", "pending", "completed", "failed"]),
+  lastBackupAt: timestamp.nullable(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+// The secret is never included: once set, it's write-only (api/src/routes/webhooks.ts).
+export const WebhookSubscriptionSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  projectId: uuid.nullable(),
+  url: z.string(),
+  events: z.array(z.string()),
+  isActive: z.boolean(),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
 export const paginated = <T extends z.ZodTypeAny>(item: T) =>
   z.object({ data: z.array(item), nextCursor: z.string().nullable() });
 
@@ -156,6 +187,7 @@ export const DeploymentSchema = z.object({
   trigger: z.enum(["push", "manual", "rollback", "redeploy"]),
   imageDigest: z.string().nullable(),
   commitSha: z.string().nullable(),
+  rollbackOfId: uuid.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -174,6 +206,30 @@ export const DeploymentDetailSchema = DeploymentSchema.extend({
 export const BuildLogSchema = z.object({
   content: z.string(),
   updatedAt: timestamp.nullable(),
+});
+
+// `id` is a bigint identity column in the database; it's carried as a string here since JSON/JS
+// numbers can't represent the full bigint range (and `JSON.stringify` can't serialize a BigInt at all).
+export const AuditLogSchema = z.object({
+  id: z.string(),
+  actorId: uuid.nullable(),
+  action: z.string(),
+  target: z.string().nullable(),
+  metadata: json.nullable(),
+  createdAt: timestamp,
+});
+
+// Usage aggregated from usage_events (architecture.md §3, §4), by project and, when the sample
+// carried one, by service instance. serviceInstanceId/serviceName are null for a project-level
+// row (a usage_events row with no serviceInstanceId). totalReplicaMinutes sums the "replica_minutes"
+// metric only — the one metric the usage worker writes today.
+export const UsageSummaryItemSchema = z.object({
+  projectId: uuid,
+  projectName: z.string(),
+  serviceInstanceId: uuid.nullable(),
+  serviceName: z.string().nullable(),
+  totalReplicaMinutes: z.number(),
+  sampleCount: z.number().int(),
 });
 
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
