@@ -34,6 +34,7 @@ const ERROR_DESCRIPTIONS: Record<number, string> = {
   404: "Resource not found",
   409: "Conflict with the current state",
   422: "Business rule violated",
+  429: "Too many requests",
 };
 
 interface CollectedRoute {
