@@ -115,3 +115,40 @@ export const DAILY_BACKUP_TICK_JOB = "daily-backup-tick";
 
 // Default daily schedule for `scheduleDailyBackups`: once a day at 03:00 UTC (low-traffic window).
 export const DAILY_BACKUP_CRON_DEFAULT = "0 3 * * *";
+
+// Usage aggregator (architecture.md §3: "Usage aggregator | samples -> usage_events per
+// project/service | feeds future billing"; §4: "usage_events append-only, aggregated in windows
+// (1 min -> hour -> day)"). Own queue: sampling has no relation to a deployment's, a domain's or
+// a volume's lifecycle.
+export const USAGE_QUEUE = "usage";
+export const SAMPLE_USAGE_JOB = "sample-usage";
+
+export interface SampleUsageJobData {
+  serviceInstanceId: string;
+}
+
+// One job per instance per enqueue call: re-enqueuing an instance already queued doesn't
+// duplicate the sample (the jobId is scoped to the tick time, see sampleUsageJobId below).
+export function sampleUsageJobId(data: SampleUsageJobData & { at?: number }): string {
+  return `sample-usage-${data.serviceInstanceId}-${data.at ?? Date.now()}`;
+}
+
+// Like a backup attempt, a sample either succeeds or fails outright (no external propagation to
+// wait out), so the budget is short, with exponential backoff for a transient failure (runtime API
+// momentarily unreachable).
+export const SAMPLE_USAGE_JOB_RETRY = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 2000 },
+  removeOnComplete: true,
+  removeOnFail: 100,
+} as const;
+
+// Internal "tick" job name used to wire a recurring schedule to the usage queue (see
+// workers/src/usage/worker.ts: scheduleUsageSampling/createUsageWorker). Not part of the
+// API/worker job contract in the same sense as SAMPLE_USAGE_JOB: nothing produces this job today
+// outside of scheduleUsageSampling itself.
+export const USAGE_SAMPLING_TICK_JOB = "usage-sampling-tick";
+
+// Default sampling schedule for `scheduleUsageSampling`: every minute, matching the finest
+// aggregation window in architecture.md §4 ("1 min -> hour -> day").
+export const USAGE_SAMPLING_CRON_DEFAULT = "* * * * *";
