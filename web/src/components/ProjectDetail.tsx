@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, ApiProblem, type Connection, type Environment, type Service } from "../api";
+import { api, ApiProblem, type CanvasLayout, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
 import { DeploymentsPanel } from "./DeploymentsPanel";
 import { VariablesPanel } from "./VariablesPanel";
@@ -8,8 +8,8 @@ import { LogsPanel } from "./LogsPanel";
 import { MetricsPanel } from "./MetricsPanel";
 import { DomainsPanel } from "./DomainsPanel";
 
-const KINDS = ["web", "worker", "postgres", "redis"] as const;
-const SOURCES = ["github_repo", "image", "template"] as const;
+const KINDS = ["web", "worker", "postgres", "redis", "object_storage"] as const;
+const SOURCES = ["github_repo", "image", "template", "minio_template"] as const;
 
 export function ProjectDetail({
   projectId,
@@ -41,6 +41,20 @@ export function ProjectDetail({
     queryKey: ["connections", projectId],
     queryFn: () => api<{ data: Connection[] }>(`/projects/${projectId}/connections`).then((r) => r.data),
   });
+
+  const canvasLayout = useQuery({
+    queryKey: ["canvas-layout", projectId],
+    queryFn: () => api<{ layout: CanvasLayout }>(`/projects/${projectId}/canvas-layout`).then((r) => r.layout),
+  });
+
+  async function saveLayout(layout: CanvasLayout) {
+    try {
+      await api(`/projects/${projectId}/canvas-layout`, { method: "PATCH", json: { layout } });
+      queryClient.setQueryData(["canvas-layout", projectId], layout);
+    } catch (err) {
+      setError(err instanceof ApiProblem ? err.message : "Error saving the canvas layout.");
+    }
+  }
 
   async function connect(fromInstanceId: string, toInstanceId: string) {
     setError(null);
@@ -111,13 +125,15 @@ export function ProjectDetail({
       </div>
 
       <h3>Canvas</h3>
-      {services.data && (
+      {services.data && canvasLayout.data && (
         <ServiceCanvas
           projectId={projectId}
           services={services.data}
           connections={connections.data ?? []}
           environment={environment}
           canWrite={canWrite}
+          layout={canvasLayout.data}
+          onLayoutChange={saveLayout}
           onConnect={connect}
           onDisconnect={disconnect}
         />

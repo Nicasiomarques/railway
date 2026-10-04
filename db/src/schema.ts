@@ -31,6 +31,7 @@ export const serviceSource = pgEnum("service_source", [
   "template",
   "postgres_template",
   "redis_template",
+  "minio_template",
 ]);
 export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES);
 // "cron": created by the cron scheduler (workers/src/cron) when a cron service's schedule fires.
@@ -92,6 +93,9 @@ export const projects = pgTable(
       .references(() => organizations.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
+    // Node positions for the service canvas, keyed by serviceId: { [serviceId]: { x, y } }.
+    // Written by the frontend (ServiceCanvas.tsx) via PATCH /projects/:projectId/canvas-layout.
+    canvasLayout: jsonb("canvas_layout").$type<Record<string, { x: number; y: number }>>().notNull().default({}),
     ...timestamps,
     ...softDelete,
   },

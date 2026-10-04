@@ -44,9 +44,14 @@ export const ProjectSchema = z.object({
   organizationId: uuid,
   name: z.string(),
   slug: z.string(),
+  canvasLayout: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
   createdAt: timestamp,
   updatedAt: timestamp,
   deletedAt: timestamp.nullable(),
+});
+
+export const CanvasLayoutSchema = z.object({
+  layout: z.record(z.string(), z.object({ x: z.number(), y: z.number() })),
 });
 
 export const EnvironmentSchema = z.object({
@@ -67,8 +72,8 @@ export const ServiceSchema = z.object({
   id: uuid,
   projectId: uuid,
   name: z.string(),
-  kind: z.enum(["web", "worker", "postgres", "redis", "cron"]),
-  source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
+  kind: z.enum(["web", "worker", "postgres", "redis", "cron", "object_storage"]),
+  source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template", "minio_template"]),
   rootDir: z.string(),
   repoUrl: z.string().nullable(),
   detectionSnapshot: json.nullable(),

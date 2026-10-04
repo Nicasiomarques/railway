@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "canvas_layout" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { type DeploymentStatus, transition } from "@railway-like/shared";
+import { resolveTemplateImage, type DeploymentStatus, transition } from "@railway-like/shared";
 import { requireInstanceAccess } from "../access.js";
 import { sealEnvSnapshot, type Keyring } from "../crypto/envelope.js";
 import { ApiError } from "../errors.js";
@@ -82,7 +82,9 @@ async function sendSse(request: FastifyRequest, reply: FastifyReply, lines: Asyn
 }
 
 // Exactly one of the two sources: a ready-made image by digest, or a commit from a repo that the cluster builds.
-// Which one is required depends on the service's source, and that is checked in the route.
+// Which one is required depends on the service's source, and that is checked in the route — including
+// whether imageDigest can be left out because the source is a template with a resolvable image
+// (resolveTemplateImage; see @railway-like/shared/templates).
 export const createDeploymentBody = z
   .object({
     imageDigest: z
@@ -92,9 +94,6 @@ export const createDeploymentBody = z
     commitSha: z.string().regex(/^[a-f0-9]{40}$/, "use the full commit SHA (40 hex)").optional(),
   })
   .superRefine((body, ctx) => {
-    if (!body.imageDigest && !body.commitSha) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "provide imageDigest or commitSha" });
-    }
     if (body.imageDigest && body.commitSha) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "provide only one: imageDigest or commitSha" });
     }
@@ -310,7 +309,10 @@ export const deploymentRoutes: FastifyPluginAsync<{
       if (source.source === "github_repo" && !body.commitSha) {
         throw new ApiError(400, "source_mismatch", "A github_repo service requires commitSha, not imageDigest.");
       }
-      if (source.source !== "github_repo" && !body.imageDigest) {
+      // Templates (postgres_template, redis_template, minio_template) resolve to a pinned image when
+      // the caller doesn't pass one, the same way github_repo resolves to one through the build.
+      const imageDigest = source.source === "github_repo" ? null : body.imageDigest ?? resolveTemplateImage(source.source);
+      if (source.source !== "github_repo" && !imageDigest) {
         throw new ApiError(400, "source_mismatch", "This service requires imageDigest, not commitSha.");
       }
 
@@ -324,7 +326,7 @@ export const deploymentRoutes: FastifyPluginAsync<{
           const { created, cancelledIds: cancelled } = await createQueuedDeployment(tx, keyring, {
             instanceId,
             trigger: "manual",
-            imageDigest: body.imageDigest ?? null,
+            imageDigest: imageDigest ?? null,
             commitSha: body.commitSha ?? null,
           });
           cancelledIds.push(...cancelled);

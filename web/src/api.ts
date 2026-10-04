@@ -50,6 +50,7 @@ export type Service = {
   instances: { id: string; environmentName: string | null; replicas: number }[];
 };
 export type Connection = { fromInstanceId: string; toInstanceId: string; environmentName: string };
+export type CanvasLayout = Record<string, { x: number; y: number }>;
 
 export type DeploymentStatus =
   | "Queued"

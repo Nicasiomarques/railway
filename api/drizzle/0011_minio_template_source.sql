@@ -1,0 +1,1 @@
+ALTER TYPE "public"."service_source" ADD VALUE 'minio_template';

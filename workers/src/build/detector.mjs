@@ -6,21 +6,29 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** @typedef {{ exists(path: string): boolean, read(path: string): string | null }} Tree */
-/** @typedef {{ kind: "dockerfile" | "node" | "python" | "go" | "unknown", dockerfile: string | null, justification: string[] }} Detection */
+/** @typedef {{ kind: "dockerfile" | "node" | "python" | "go" | "java" | "php" | "unknown", dockerfile: string | null, justification: string[] }} Detection */
 
 const NODE_DEFAULT_MAJOR = "22";
 const PYTHON_IMAGE = "python:3.12-slim";
 const GO_DEFAULT_VERSION = "1.23";
+const JAVA_DEFAULT_VERSION = "21";
+const PHP_DEFAULT_VERSION = "8.3";
 
 /** @param {Tree} tree @returns {Detection} */
 export function detect(tree) {
   if (tree.exists("Dockerfile")) {
     return { kind: "dockerfile", dockerfile: tree.read("Dockerfile"), justification: ["Dockerfile found in the repo: used as-is"] };
   }
+  // Checked ahead of package.json/go.mod: a Java or PHP repo can carry those for frontend
+  // assets or tooling without being a Node/Go service.
+  if (tree.exists("pom.xml") || tree.exists("build.gradle") || tree.exists("build.gradle.kts")) return detectJava(tree);
+  if (tree.exists("composer.json")) return detectPhp(tree);
   if (tree.exists("package.json")) return detectNode(tree);
   if (tree.exists("requirements.txt") || tree.exists("pyproject.toml")) return detectPython(tree);
   if (tree.exists("go.mod")) return detectGo(tree);
-  return unknown(["no recognized stack file (package.json, requirements.txt, pyproject.toml, go.mod)"]);
+  return unknown([
+    "no recognized stack file (pom.xml, build.gradle, composer.json, package.json, requirements.txt, pyproject.toml, go.mod)",
+  ]);
 }
 
 function unknown(justification) {
@@ -131,6 +139,98 @@ function detectGo(tree) {
     'CMD ["/app"]',
   ].join("\n") + "\n";
   return { kind: "go", dockerfile, justification };
+}
+
+/** @param {Tree} tree */
+function detectJava(tree) {
+  const isGradle = tree.exists("build.gradle") || tree.exists("build.gradle.kts");
+  const buildFile = isGradle ? (tree.exists("build.gradle.kts") ? "build.gradle.kts" : "build.gradle") : "pom.xml";
+  const content = tree.read(buildFile) ?? "";
+  const justification = [`${buildFile} found → ${isGradle ? "Gradle" : "Maven"} build`];
+
+  const version = javaVersion(content) ?? JAVA_DEFAULT_VERSION;
+  justification.push(
+    javaVersion(content) ? `Java version found in ${buildFile} → ${version}` : `no Java version in ${buildFile} → ${version} (default)`,
+  );
+
+  const isSpringBoot = /spring-boot-starter/.test(content);
+  if (isSpringBoot) justification.push("spring-boot-starter dependency found");
+
+  const dockerfile = isGradle
+    ? [
+        `FROM gradle:8-jdk${version} AS build`,
+        "WORKDIR /app",
+        "COPY . .",
+        "RUN gradle build -x test --no-daemon",
+        `FROM eclipse-temurin:${version}-jre-alpine`,
+        "COPY --from=build /app/build/libs/*.jar /app/app.jar",
+        "USER 1000",
+        "EXPOSE 8080",
+        'CMD ["java","-jar","/app/app.jar"]',
+      ]
+    : [
+        `FROM maven:3.9-eclipse-temurin-${version} AS build`,
+        "WORKDIR /app",
+        "COPY . .",
+        "RUN mvn -B -DskipTests package",
+        `FROM eclipse-temurin:${version}-jre-alpine`,
+        "COPY --from=build /app/target/*.jar /app/app.jar",
+        "USER 1000",
+        "EXPOSE 8080",
+        'CMD ["java","-jar","/app/app.jar"]',
+      ];
+  return { kind: "java", dockerfile: dockerfile.join("\n") + "\n", justification };
+}
+
+/** Java version declared in a pom.xml or build.gradle(.kts) (e.g. "17", "21"). */
+function javaVersion(content) {
+  const m =
+    /<java\.version>\s*(\d+)/.exec(content) ??
+    /<maven\.compiler\.release>\s*(\d+)/.exec(content) ??
+    /<maven\.compiler\.source>\s*1?\.?(\d+)/.exec(content) ??
+    /JavaVersion\.VERSION_(\d+)/.exec(content) ??
+    /sourceCompatibility\s*=?\s*['"]?1?\.?(\d+)/.exec(content);
+  return m ? m[1] : null;
+}
+
+/** @param {Tree} tree */
+function detectPhp(tree) {
+  const justification = ["composer.json found"];
+  let composer;
+  try {
+    composer = JSON.parse(tree.read("composer.json") ?? "");
+  } catch {
+    return unknown([...justification, "composer.json is not valid JSON"]);
+  }
+
+  const range = composer.require?.php;
+  const version = phpVersion(range) ?? PHP_DEFAULT_VERSION;
+  justification.push(range ? `require.php=${range} → php:${version}` : `no require.php → php:${version} (default)`);
+
+  const isLaravel = Boolean(composer.require?.["laravel/framework"]);
+  const docroot = tree.exists("public/index.php") ? "public" : ".";
+  if (isLaravel) justification.push("laravel/framework dependency found → docroot public/");
+  if (!tree.exists(`${docroot === "." ? "index.php" : "public/index.php"}`)) {
+    return unknown([...justification, "no index.php found (checked public/index.php and index.php)"]);
+  }
+
+  const dockerfile = [
+    `FROM php:${version}-cli-alpine`,
+    "WORKDIR /app",
+    "COPY --from=composer:2 /usr/bin/composer /usr/bin/composer",
+    "COPY . .",
+    "RUN composer install --no-dev --optimize-autoloader",
+    "USER 1000",
+    "EXPOSE 8080",
+    `CMD ["php","-S","0.0.0.0:8080","-t","${docroot}"]`,
+  ].join("\n") + "\n";
+  return { kind: "php", dockerfile, justification };
+}
+
+/** Highest PHP minor version accepted by the composer constraint (e.g. "^8.2" → "8.2", ">=8.1" → "8.1"). */
+function phpVersion(range) {
+  const m = typeof range === "string" ? /(\d+\.\d+)/.exec(range) : null;
+  return m ? m[1] : null;
 }
 
 // CLI: `node detector.mjs <srcDir> <rootDir> <outDir>`. Writes outDir/Dockerfile and outDir/detection.txt.
