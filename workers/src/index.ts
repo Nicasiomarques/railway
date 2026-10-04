@@ -20,6 +20,8 @@ import { PostgresUsageStore } from "./usage/postgres-store.js";
 import { createUsageWorker } from "./usage/worker.js";
 import { PostgresCronStore } from "./cron/postgres-store.js";
 import { registerCronSchedules } from "./cron/scheduler.js";
+import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
+import { createWebhookWorker } from "./webhooks/worker.js";
 
 // Explicit runtime choice: "k8s" creates workloads on the cluster; "memory" only simulates.
 // Without the choice the process doesn't start, so it doesn't appear to be running while doing nothing.
@@ -112,6 +114,13 @@ const usageWorker = createUsageWorker(connection, {
   runtime,
 });
 
+// Outbound webhooks (roadmap.md Phase 5): delivery via Node's native fetch (FetchWebhookTransport,
+// the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
+// subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
+const webhookWorker = createWebhookWorker(connection, {
+  store: new PostgresWebhookStore(db),
+});
+
 console.log(`workers started (Postgres store, runtime ${runtimeKind})`);
 
 async function shutdown(): Promise<void> {
@@ -121,6 +130,7 @@ async function shutdown(): Promise<void> {
   await usageWorker.close();
   await deploymentsQueue.close();
   await cronQueue.close();
+  await webhookWorker.close();
   await connection.quit();
   await pool.end();
   process.exit(0);
