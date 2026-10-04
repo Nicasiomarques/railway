@@ -8,6 +8,7 @@ import { loginCommand } from "./commands/login.js";
 import { logsCommand } from "./commands/logs.js";
 import { rollbackCommand } from "./commands/rollback.js";
 import { statusCommand } from "./commands/status.js";
+import { templateDeployCommand, templatesListCommand } from "./commands/templates.js";
 import { formatError } from "./http.js";
 
 // Wraps each action: errors (ApiProblem or otherwise) come out as a readable message, never raw JSON or a stack trace.
@@ -106,6 +107,23 @@ ciEnv
   .argument("<environmentId>", "ID of the environment to tear down")
   .option("--project <id>", "Project ID (overrides the project config)")
   .action(wrap((environmentId: string, opts: { project?: string }) => ciEnvDestroyCommand(environmentId, opts)));
+
+const templates = program.command("templates").description("Browses and deploys templates from the marketplace");
+
+templates
+  .command("list")
+  .description("Lists the templates available in the marketplace")
+  .action(wrap(templatesListCommand));
+
+templates
+  .command("deploy")
+  .description("Deploys a template as a new service in the project")
+  .argument("<source>", "Template source, e.g. postgres_template")
+  .option("--project <id>", "Project ID (overrides the project config)")
+  .option("--name <name>", "Service name (defaults to the template's own name)")
+  .action(
+    wrap((source: string, opts: { project?: string; name?: string }) => templateDeployCommand(source, opts)),
+  );
 
 const domain = program.command("domain").description("Manages the configured service's domains");
 

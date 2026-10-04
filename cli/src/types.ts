@@ -30,6 +30,13 @@ export type ServiceInstanceSummary = {
   replicas: number;
 };
 
+export type MarketplaceTemplate = {
+  source: "postgres_template" | "redis_template" | "minio_template";
+  name: string;
+  description: string;
+  kind: "postgres" | "redis" | "object_storage";
+};
+
 export type Service = {
   id: string;
   projectId: string;

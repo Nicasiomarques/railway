@@ -10,6 +10,56 @@ import type { Db } from "../db/client.js";
 import { auditLogs, environments, serviceInstances, services } from "../db/schema.js";
 import { idempotencyKeyHeader } from "./headers.js";
 
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+type NewServiceFields = {
+  name: string;
+  kind: "web" | "worker" | "postgres" | "redis" | "cron" | "object_storage";
+  source: "github_repo" | "image" | "template" | "postgres_template" | "redis_template" | "minio_template";
+  rootDir?: string;
+  repoUrl?: string;
+  schedule?: string;
+};
+
+// Shared by `POST /projects/:projectId/services` and the template-marketplace deploy route
+// (routes/templates.ts): quota check, name-uniqueness check, insert the service row, insert one
+// instance per existing environment, and an audit log entry - all inside the caller's transaction.
+export async function createServiceAndInstances(
+  tx: Tx,
+  { organizationId, userId, projectId, service }: { organizationId: string; userId: string; projectId: string; service: NewServiceFields },
+): Promise<{ status: 201; body: Record<string, unknown> }> {
+  await assertServiceQuota(tx, projectId);
+
+  const [taken] = await tx
+    .select({ id: services.id })
+    .from(services)
+    .where(and(eq(services.projectId, projectId), eq(services.name, service.name), isNull(services.deletedAt)))
+    .limit(1);
+  if (taken) throw new ApiError(409, "name_taken", `A service named "${service.name}" already exists.`);
+
+  const { schedule, ...serviceBody } = service;
+  const [created] = await tx.insert(services).values({ projectId, rootDir: "/", ...serviceBody }).returning();
+
+  const envs = await tx
+    .select({ id: environments.id })
+    .from(environments)
+    .where(and(eq(environments.projectId, projectId), isNull(environments.deletedAt)));
+  const instances = envs.length
+    ? await tx
+        .insert(serviceInstances)
+        .values(envs.map((e) => ({ serviceId: created.id, environmentId: e.id, schedule: schedule ?? null })))
+        .returning()
+    : [];
+
+  await tx.insert(auditLogs).values({
+    organizationId,
+    actorId: userId,
+    action: "service.create",
+    target: `service:${created.id}`,
+  });
+  return { status: 201, body: { ...created, instances } };
+}
+
 export const projectParams = z.object({ projectId: z.string().uuid() });
 
 export const createServiceBody = z
@@ -85,39 +135,7 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
       userId,
       key: idempotencyKeyHeader(request.headers),
       payload: { projectId, ...body },
-      run: async (tx) => {
-        await assertServiceQuota(tx, projectId);
-
-        const [taken] = await tx
-          .select({ id: services.id })
-          .from(services)
-          .where(and(eq(services.projectId, projectId), eq(services.name, body.name), isNull(services.deletedAt)))
-          .limit(1);
-        if (taken) throw new ApiError(409, "name_taken", `A service named "${body.name}" already exists.`);
-
-        // `schedule` lives on service_instances (one per environment), not on the service row itself.
-        const { schedule, ...serviceBody } = body;
-        const [service] = await tx.insert(services).values({ projectId, ...serviceBody }).returning();
-
-        const envs = await tx
-          .select({ id: environments.id })
-          .from(environments)
-          .where(and(eq(environments.projectId, projectId), isNull(environments.deletedAt)));
-        const instances = envs.length
-          ? await tx
-              .insert(serviceInstances)
-              .values(envs.map((e) => ({ serviceId: service.id, environmentId: e.id, schedule: schedule ?? null })))
-              .returning()
-          : [];
-
-        await tx.insert(auditLogs).values({
-          organizationId,
-          actorId: userId,
-          action: "service.create",
-          target: `service:${service.id}`,
-        });
-        return { status: 201, body: { ...service, instances } };
-      },
+      run: (tx) => createServiceAndInstances(tx, { organizationId, userId, projectId, service: body }),
     });
 
     return reply.code(result.status).send(result.body);

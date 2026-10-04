@@ -33,3 +33,39 @@ export function resolveTemplateImage(source: string): string | null {
   if (!isTemplateSource(source)) return null;
   return PINNED_TEMPLATE_IMAGES[source] ?? null;
 }
+
+// Marketplace catalog (roadmap.md Phase 5 "template marketplace"): the browsable, human-facing
+// view of the template sources above. One catalog entry per `TemplateSource`, so the catalog can
+// never drift out of sync with what's actually deployable - adding a template source here without
+// one there would be a type error.
+export type MarketplaceTemplate = {
+  source: TemplateSource;
+  name: string;
+  description: string;
+  kind: "postgres" | "redis" | "object_storage";
+};
+
+export const MARKETPLACE_TEMPLATES: readonly MarketplaceTemplate[] = [
+  {
+    source: "postgres_template",
+    name: "PostgreSQL",
+    description: "Managed Postgres 16 database, ready to connect your services to.",
+    kind: "postgres",
+  },
+  {
+    source: "redis_template",
+    name: "Redis",
+    description: "Managed Redis 7 cache/queue store.",
+    kind: "redis",
+  },
+  {
+    source: "minio_template",
+    name: "MinIO",
+    description: "S3-compatible object storage.",
+    kind: "object_storage",
+  },
+] as const;
+
+export function findMarketplaceTemplate(source: string): MarketplaceTemplate | undefined {
+  return MARKETPLACE_TEMPLATES.find((t) => t.source === source);
+}

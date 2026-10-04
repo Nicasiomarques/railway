@@ -164,6 +164,7 @@ CreateEnvironment(prod)
 - Every resource receives the labels `platform/project`, `platform/env`, `platform/instance`.
 - GC by reconciliation: orphaned resources are removed after a grace period.
 - Decommissioning (TTL sweep, `workers/src/decommission`): the inverse saga. A periodic sweep (every 5 minutes) finds environments whose `ttl_at` has passed — a PR preview marked for removal, or an ephemeral CI environment — and deletes the environment's whole namespace in one call (undoing steps 1–3 above together), then releases its domains and soft-deletes its service instances and itself.
+- Template marketplace (roadmap.md Phase 5, `shared/src/templates.ts`, `api/src/routes/templates.ts`): a static catalog over the existing `*_template` service sources (Postgres, Redis, MinIO) — `GET /templates` lists it, `POST /projects/:id/templates/:source/deploy` creates a preconfigured service the same way `POST /projects/:id/services` would, so a caller doesn't need to know the source enum values by hand.
 - Stateful (Postgres/Redis/volumes): PVC + scheduled backup (volume snapshot + logical dump) to object storage; restore is an explicit, audited operation.
 - Domain: hostname → DNS (wildcard for automatic subdomain) → certificate → route on the edge. Each step visible to the user.
 

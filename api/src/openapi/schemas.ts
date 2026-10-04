@@ -123,6 +123,13 @@ export const ServiceListItemSchema = ServiceSchema.extend({
   instances: z.array(ServiceInstanceSummarySchema),
 });
 
+export const MarketplaceTemplateSchema = z.object({
+  source: z.enum(["postgres_template", "redis_template", "minio_template"]),
+  name: z.string(),
+  description: z.string(),
+  kind: z.enum(["postgres", "redis", "object_storage"]),
+});
+
 export const ConnectionSchema = z.object({
   fromInstanceId: uuid,
   toInstanceId: uuid,
