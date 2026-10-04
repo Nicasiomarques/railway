@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { ExtensionSchema, listOf } from "../openapi/schemas.js";
 import { requireMembership } from "../access.js";
@@ -77,7 +77,7 @@ export const extensionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db 
         const [project] = await db
           .select({ id: projects.id })
           .from(projects)
-          .where(and(eq(projects.id, body.projectId), eq(projects.organizationId, organizationId)));
+          .where(and(eq(projects.id, body.projectId), eq(projects.organizationId, organizationId), isNull(projects.deletedAt)));
         if (!project) throw new ApiError(404, "project_not_found", "Project not found.");
       }
 
