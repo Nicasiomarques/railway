@@ -7,7 +7,10 @@ const KEY_PATTERN = /^[A-Z_][A-Z0-9_]{0,127}$/;
 
 export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; canWrite: boolean }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ key: "", value: "", isSecret: false });
+  const [adding, setAdding] = useState(false);
+  const [newVar, setNewVar] = useState({ key: "", value: "", isSecret: false });
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Keys whose "reveal" was explicitly requested; never populated by default.
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
@@ -17,21 +20,35 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     queryFn: () => api<{ data: Variable[] }>(`/services/${instanceId}/variables`).then((r) => r.data),
   });
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
+  async function saveValue(key: string, value: string, isSecret: boolean) {
     setError(null);
     try {
-      const key = form.key.trim();
-      // PUT upserts by key: the same form handles both create and update.
+      // PUT upserts by key: the same call handles both create and update.
       await api(`/services/${instanceId}/variables/${key}`, {
         method: "PUT",
-        json: { value: form.value, isSecret: form.isSecret },
+        json: { value, isSecret },
       });
-      setForm({ key: "", value: "", isSecret: false });
       queryClient.invalidateQueries({ queryKey: ["variables", instanceId] });
+      return true;
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error saving variable.");
+      return false;
     }
+  }
+
+  async function createVariable(e: React.FormEvent) {
+    e.preventDefault();
+    const key = newVar.key.trim();
+    const ok = await saveValue(key, newVar.value, newVar.isSecret);
+    if (ok) {
+      setNewVar({ key: "", value: "", isSecret: false });
+      setAdding(false);
+    }
+  }
+
+  async function submitEdit(key: string, isSecret: boolean) {
+    const ok = await saveValue(key, editValue, isSecret);
+    if (ok) setEditingKey(null);
   }
 
   async function remove(key: string) {
@@ -59,86 +76,122 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     });
   }
 
-  // Fills the form with the selected variable; secrets come without a value (the API never returns it).
-  function edit(v: Variable) {
-    setForm({ key: v.key, value: v.value ?? "", isSecret: v.isSecret });
+  // Click-to-edit: starts inline editing for the clicked variable. Secrets start blank (the API
+  // never returns a secret's value), so editing one always sets a fresh value.
+  function startEdit(v: Variable) {
+    setEditingKey(v.key);
+    setEditValue(v.isSecret ? "" : v.value ?? "");
   }
 
-  const keyValid = KEY_PATTERN.test(form.key.trim());
+  const newKeyValid = KEY_PATTERN.test(newVar.key.trim());
 
   return (
     <section className="variables">
       <div className="section-head">
         <h3>Variables</h3>
       </div>
-
-      {canWrite && (
-        <form className="inline wrap" onSubmit={save}>
-          <input
-            value={form.key}
-            onChange={(e) => setForm({ ...form, key: e.target.value.toUpperCase() })}
-            placeholder="VARIABLE_NAME"
-            aria-label="key"
-          />
-          <input
-            value={form.value}
-            onChange={(e) => setForm({ ...form, value: e.target.value })}
-            placeholder="value"
-            aria-label="value"
-          />
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={form.isSecret}
-              onChange={(e) => setForm({ ...form, isSecret: e.target.checked })}
-            />
-            secret
-          </label>
-          <button type="submit" disabled={!keyValid}>
-            Save
-          </button>
-        </form>
-      )}
       {error && <p className="error">{error}</p>}
 
       <ul className="list">
-        {list.data?.map((v) => (
-          <li key={v.key} className="card-row">
-            <div>
-              <strong>{v.key}</strong>{" "}
-              {/* This route only lists the instance's own variables; the API doesn't yet
-                  resolve/expose environment or project inheritance for this origin. */}
-              <span className="pill">own instance</span>
-              {v.isSecret && <span className="chip">secret</span>}
-            </div>
-            <div className="var-actions">
-              <code>
-                {v.isSecret
-                  ? revealed.has(v.key)
-                    ? "the API never returns a secret's value — save a new value to replace it"
-                    : "••••••"
-                  : v.value}
-              </code>
-              {v.isSecret && (
-                <button className="ghost small" onClick={() => toggleReveal(v.key)}>
-                  {revealed.has(v.key) ? "Hide" : "Reveal"}
-                </button>
-              )}
-              {canWrite && (
+        {list.data?.map((v) => {
+          const isEditing = editingKey === v.key;
+          return (
+            <li key={v.key} className="card-row var-row">
+              {isEditing ? (
+                <form
+                  className="var-edit-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitEdit(v.key, v.isSecret);
+                  }}
+                >
+                  <span className="var-key">{v.key}</span>
+                  <input
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    placeholder={v.isSecret ? "new secret value" : "value"}
+                    autoFocus
+                  />
+                  <button type="submit" className="small">
+                    Save
+                  </button>
+                  <button type="button" className="ghost small" onClick={() => setEditingKey(null)}>
+                    Cancel
+                  </button>
+                </form>
+              ) : (
                 <>
-                  <button className="ghost small" onClick={() => edit(v)}>
-                    Edit
-                  </button>
-                  <button className="ghost small" onClick={() => remove(v.key)}>
-                    Remove
-                  </button>
+                  <div className="var-key">
+                    {v.key}
+                    {v.isSecret && <span className="chip">secret</span>}
+                  </div>
+                  <div className="var-value">
+                    <code onClick={() => canWrite && startEdit(v)} style={canWrite ? { cursor: "pointer" } : undefined}>
+                      {v.isSecret ? (revealed.has(v.key) ? "•••• (hidden by the API)" : "••••••") : v.value}
+                    </code>
+                    {v.isSecret && (
+                      <button className="ghost small" onClick={() => toggleReveal(v.key)}>
+                        {revealed.has(v.key) ? "Hide" : "Reveal"}
+                      </button>
+                    )}
+                    {canWrite && (
+                      <div className="var-actions">
+                        <button className="ghost small" onClick={() => startEdit(v)}>
+                          Edit
+                        </button>
+                        <button className="ghost small danger-text" onClick={() => remove(v.key)}>
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
-            </div>
-          </li>
-        ))}
+            </li>
+          );
+        })}
         {list.data?.length === 0 && <li className="muted">No variables yet.</li>}
       </ul>
+
+      {canWrite && (
+        <div className="disclose">
+          {!adding ? (
+            <button className="disclose-trigger" onClick={() => setAdding(true)}>
+              + Add variable
+            </button>
+          ) : (
+            <form className="disclose-body inline wrap" onSubmit={createVariable}>
+              <input
+                value={newVar.key}
+                onChange={(e) => setNewVar({ ...newVar, key: e.target.value.toUpperCase() })}
+                placeholder="VARIABLE_NAME"
+                aria-label="key"
+                autoFocus
+              />
+              <input
+                value={newVar.value}
+                onChange={(e) => setNewVar({ ...newVar, value: e.target.value })}
+                placeholder="value"
+                aria-label="value"
+              />
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={newVar.isSecret}
+                  onChange={(e) => setNewVar({ ...newVar, isSecret: e.target.checked })}
+                />
+                secret
+              </label>
+              <button type="submit" disabled={!newKeyValid}>
+                Save
+              </button>
+              <button type="button" className="ghost" onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </section>
   );
 }

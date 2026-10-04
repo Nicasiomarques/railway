@@ -3,12 +3,16 @@ import { api, type MetricsSnapshot } from "../api";
 
 const POLL_MS = 5000;
 
-export function MetricsPanel({ instanceId }: { instanceId: string }) {
-  const metrics = useQuery({
+export function useInstanceMetrics(instanceId: string) {
+  return useQuery({
     queryKey: ["metrics", instanceId],
     queryFn: () => api<MetricsSnapshot>(`/services/${instanceId}/metrics`),
     refetchInterval: POLL_MS,
   });
+}
+
+export function MetricsPanel({ instanceId }: { instanceId: string }) {
+  const metrics = useInstanceMetrics(instanceId);
 
   return (
     <section className="metrics">
@@ -17,14 +21,21 @@ export function MetricsPanel({ instanceId }: { instanceId: string }) {
       </div>
       {metrics.isLoading && <p className="muted">Loading…</p>}
       {metrics.data && (
-        <div className="card-row">
-          <div>
-            <span className={`status status-${metrics.data.status}`}>{metrics.data.status}</span>{" "}
-            <span className="muted">
-              {metrics.data.readyReplicas}/{metrics.data.replicas} ready
+        <div className="metrics-grid">
+          <div className="metric-tile">
+            <span className="muted">Status</span>
+            <span className={`status status-${metrics.data.status}`}>{metrics.data.status}</span>
+          </div>
+          <div className="metric-tile">
+            <span className="muted">Replicas</span>
+            <span className="value">
+              {metrics.data.readyReplicas}/{metrics.data.replicas}
             </span>
           </div>
-          <span className="muted">{metrics.data.image ?? "no image"}</span>
+          <div className="metric-tile">
+            <span className="muted">Image</span>
+            <span className="faint">{metrics.data.image ?? "no image"}</span>
+          </div>
         </div>
       )}
     </section>

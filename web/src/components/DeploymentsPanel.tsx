@@ -17,6 +17,7 @@ export function DeploymentsPanel({
   source,
   canWrite,
   onClose,
+  embedded = false,
 }: {
   instanceId: string;
   serviceName: string;
@@ -24,6 +25,7 @@ export function DeploymentsPanel({
   source: string;
   canWrite: boolean;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [origin, setOrigin] = useState("");
@@ -73,15 +75,17 @@ export function DeploymentsPanel({
 
   return (
     <section className="deployments">
-      <div className="section-head">
-        <h3>
-          Deployments: {serviceName}
-          {environmentName && <span className="muted"> · {environmentName}</span>}
-        </h3>
-        <button className="ghost" onClick={onClose}>
-          Close
-        </button>
-      </div>
+      {!embedded && (
+        <div className="section-head">
+          <h3>
+            Deployments: {serviceName}
+            {environmentName && <span className="muted"> · {environmentName}</span>}
+          </h3>
+          <button className="ghost" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      )}
 
       {canWrite && (
         <form className="inline wrap" onSubmit={deploy}>

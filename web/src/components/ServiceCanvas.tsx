@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { CanvasLayout, Connection, Service } from "../api";
+import { useInstanceMetrics } from "./MetricsPanel";
 
 type Pos = { x: number; y: number };
 
 const NODE_W = 200;
-const NODE_H = 72;
+const NODE_H = 76;
 const GAP = 24;
 const COLS = 3;
 // Debounce for persisting layout changes to the backend while dragging (pointermove fires per frame).
 const SAVE_DEBOUNCE_MS = 500;
+// Pointer movement under this, from pointerdown to pointerup, counts as a click (opens the
+// inspector) rather than a drag (moves the node) -- the two share the same pointer handlers.
+const CLICK_THRESHOLD_PX = 4;
 
 // Default grid position for services that haven't been dragged yet.
 function defaultPos(index: number): Pos {
@@ -27,9 +31,11 @@ export function ServiceCanvas({
   environment,
   canWrite,
   layout,
+  openInstanceId,
   onLayoutChange,
   onConnect,
   onDisconnect,
+  onOpenNode,
 }: {
   projectId: string;
   services: Service[];
@@ -37,14 +43,19 @@ export function ServiceCanvas({
   environment: string | null;
   canWrite: boolean;
   layout: CanvasLayout;
+  openInstanceId: string | null;
   onLayoutChange: (layout: CanvasLayout) => void;
   onConnect: (fromInstanceId: string, toInstanceId: string) => void;
   onDisconnect: (fromInstanceId: string, toInstanceId: string) => void;
+  onOpenNode: (node: { serviceId: string; instanceId: string; name: string; kind: string; source: string }) => void;
 }) {
   const [positions, setPositions] = useState<Record<string, Pos>>(layout);
   const [linking, setLinking] = useState<{ fromInstanceId: string; x: number; y: number } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number } | null>(null);
+  const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(
+    null,
+  );
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // The server is the source of truth; resync local state whenever the project or its saved layout changes.
@@ -85,14 +96,21 @@ export function ServiceCanvas({
   function onNodePointerDown(e: React.PointerEvent<HTMLDivElement>, node: Node, index: number) {
     e.currentTarget.setPointerCapture(e.pointerId);
     const origin = posOf(node, index);
-    drag.current = { id: node.serviceId, startX: e.clientX, startY: e.clientY, origX: origin.x, origY: origin.y };
+    drag.current = { id: node.serviceId, startX: e.clientX, startY: e.clientY, origX: origin.x, origY: origin.y, moved: false };
   }
 
   function onNodePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const d = drag.current;
     if (!d) return;
-    const x = Math.max(0, d.origX + e.clientX - d.startX);
-    const y = Math.max(0, d.origY + e.clientY - d.startY);
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) > CLICK_THRESHOLD_PX) {
+      d.moved = true;
+      setDraggingId(d.id);
+    }
+    if (!d.moved) return;
+    const x = Math.max(0, d.origX + dx);
+    const y = Math.max(0, d.origY + dy);
     setPositions((p) => {
       const next = { ...p, [d.id]: { x, y } };
       scheduleSave(next);
@@ -100,8 +118,14 @@ export function ServiceCanvas({
     });
   }
 
-  function onNodePointerUp() {
+  function onNodePointerUp(node: Node) {
+    const d = drag.current;
     drag.current = null;
+    setDraggingId(null);
+    // A pointerdown/up pair with no meaningful movement is a click: open the inspector for it.
+    if (d && !d.moved) {
+      onOpenNode(node);
+    }
   }
 
   // Output port: dragging from it to another node creates the connection.
@@ -138,15 +162,15 @@ export function ServiceCanvas({
     (c) => indexOfInstance.has(c.fromInstanceId) && indexOfInstance.has(c.toInstanceId),
   );
 
-  const height = Math.max(320, ...nodes.map((n, i) => posOf(n, i).y + NODE_H + GAP));
+  const height = Math.max(280, ...nodes.map((n, i) => posOf(n, i).y + NODE_H + GAP));
 
   return (
     <div className="canvas-wrap">
       <div className="canvas-toolbar">
         <span className="muted">
           {canWrite
-            ? "Drag nodes to organize them. Drag the dot on the right to another node to connect them."
-            : "Drag nodes to organize them."}
+            ? "Clique num node para ver detalhes. Arraste para reorganizar, ou o ponto à direita para conectar."
+            : "Clique num node para ver detalhes. Arraste para reorganizar."}
         </span>
         <button className="ghost" onClick={resetLayout}>
           Rearrange
@@ -179,34 +203,93 @@ export function ServiceCanvas({
         {nodes.map((n, i) => {
           const pos = posOf(n, i);
           return (
-            <div
+            <CanvasNode
               key={n.instanceId}
-              data-instance-id={n.instanceId}
-              className="node"
-              style={{ left: pos.x, top: pos.y, width: NODE_W, height: NODE_H }}
+              node={n}
+              pos={pos}
+              canWrite={canWrite}
+              isOpen={n.instanceId === openInstanceId}
+              isDragging={n.serviceId === draggingId}
               onPointerDown={(e) => onNodePointerDown(e, n, i)}
               onPointerMove={onNodePointerMove}
-              onPointerUp={onNodePointerUp}
-              onPointerCancel={onNodePointerUp}
-            >
-              <strong>{n.name}</strong>
-              <span className="muted">
-                {n.kind} · {n.source}
-              </span>
-              {canWrite && (
-                <div
-                  className="port"
-                  onPointerDown={(e) => onPortPointerDown(e, n.instanceId)}
-                  onPointerMove={onPortPointerMove}
-                  onPointerUp={onPortPointerUp}
-                  onPointerCancel={() => setLinking(null)}
-                  title="Drag to connect"
-                />
-              )}
-            </div>
+              onPointerUp={() => onNodePointerUp(n)}
+              onPortPointerDown={(e) => onPortPointerDown(e, n.instanceId)}
+              onPortPointerMove={onPortPointerMove}
+              onPortPointerUp={onPortPointerUp}
+              onPortCancel={() => setLinking(null)}
+            />
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// Each node shows its own live status dot (polling .../metrics) so the canvas reads at a glance --
+// "Indicador visual de atividade" -- without the inspector panel needing to be open.
+function CanvasNode({
+  node,
+  pos,
+  canWrite,
+  isOpen,
+  isDragging,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPortPointerDown,
+  onPortPointerMove,
+  onPortPointerUp,
+  onPortCancel,
+}: {
+  node: Node;
+  pos: Pos;
+  canWrite: boolean;
+  isOpen: boolean;
+  isDragging: boolean;
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPointerUp: () => void;
+  onPortPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPortPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPortPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onPortCancel: () => void;
+}) {
+  const metrics = useInstanceMetrics(node.instanceId);
+  const status = metrics.data?.status ?? "unknown";
+
+  let classes = "node";
+  if (isOpen) classes += " open";
+  if (isDragging) classes += " dragging";
+
+  return (
+    <div
+      data-instance-id={node.instanceId}
+      className={classes}
+      style={{ left: pos.x, top: pos.y, width: NODE_W, height: NODE_H }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div className="node-top">
+        <span className="node-name">
+          <span className={`status-dot dot-${status}`} title={status} />
+          {node.name}
+        </span>
+      </div>
+      <span className="node-meta">
+        {node.kind} · {node.source}
+      </span>
+      {canWrite && (
+        <div
+          className="port"
+          onPointerDown={onPortPointerDown}
+          onPointerMove={onPortPointerMove}
+          onPointerUp={onPortPointerUp}
+          onPointerCancel={onPortCancel}
+          title="Drag to connect"
+        />
+      )}
     </div>
   );
 }

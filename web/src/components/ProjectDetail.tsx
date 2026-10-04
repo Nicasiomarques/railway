@@ -2,14 +2,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, ApiProblem, type CanvasLayout, type Connection, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
-import { DeploymentsPanel } from "./DeploymentsPanel";
-import { VariablesPanel } from "./VariablesPanel";
-import { LogsPanel } from "./LogsPanel";
-import { MetricsPanel } from "./MetricsPanel";
-import { DomainsPanel } from "./DomainsPanel";
+import { ServiceInspector } from "./ServiceInspector";
 
 const KINDS = ["web", "worker", "postgres", "redis", "object_storage"] as const;
 const SOURCES = ["github_repo", "image", "template", "minio_template"] as const;
+
+type OpenNode = { serviceId: string; instanceId: string; name: string; kind: string; source: string };
 
 export function ProjectDetail({
   projectId,
@@ -23,10 +21,11 @@ export function ProjectDetail({
   onBack: () => void;
 }) {
   const queryClient = useQueryClient();
+  const [addingService, setAddingService] = useState(false);
   const [form, setForm] = useState({ name: "", kind: "web", source: "github_repo" });
   const [error, setError] = useState<string | null>(null);
   const [environment, setEnvironment] = useState<string | null>(null);
-  const [deploying, setDeploying] = useState<{ instanceId: string; serviceName: string; source: string } | null>(null);
+  const [open, setOpen] = useState<OpenNode | null>(null);
 
   const environments = useQuery({
     queryKey: ["environments", projectId],
@@ -96,11 +95,15 @@ export function ProjectDetail({
         json: { name: form.name, kind: form.kind, source: form.source },
       });
       setForm({ ...form, name: "" });
+      setAddingService(false);
       queryClient.invalidateQueries({ queryKey: ["services", projectId] });
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error creating service.");
     }
   }
+
+  const openService = open && services.data?.find((s) => s.id === open.serviceId);
+  const openInstance = openService?.instances.find((i) => i.id === open?.instanceId);
 
   return (
     <section>
@@ -109,22 +112,21 @@ export function ProjectDetail({
       </button>
       <div className="section-head">
         <h2>{projectName}</h2>
+        <div className="chips">
+          {environments.data?.map((env) => (
+            <button
+              key={env.id}
+              className={env.name === environment ? "tab active" : "tab"}
+              onClick={() => setEnvironment(env.name)}
+            >
+              {env.name}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <h3>Environments</h3>
-      <div className="chips">
-        {environments.data?.map((env) => (
-          <button
-            key={env.id}
-            className={env.name === environment ? "tab active" : "tab"}
-            onClick={() => setEnvironment(env.name)}
-          >
-            {env.name}
-          </button>
-        ))}
-      </div>
+      {error && <p className="error">{error}</p>}
 
-      <h3>Canvas</h3>
       {services.data && canvasLayout.data && (
         <ServiceCanvas
           projectId={projectId}
@@ -133,83 +135,93 @@ export function ProjectDetail({
           environment={environment}
           canWrite={canWrite}
           layout={canvasLayout.data}
+          openInstanceId={open?.instanceId ?? null}
           onLayoutChange={saveLayout}
           onConnect={connect}
           onDisconnect={disconnect}
+          onOpenNode={setOpen}
         />
       )}
 
-      <h3>Services</h3>
-      {canWrite && (
-        <form className="inline wrap" onSubmit={createService}>
-          <input
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="service-name"
-          />
-          <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
-            {KINDS.map((k) => (
-              <option key={k}>{k}</option>
-            ))}
-          </select>
-          <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
-            {SOURCES.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <button type="submit" disabled={!form.name.trim()}>
-            Add service
-          </button>
-        </form>
-      )}
-      {error && <p className="error">{error}</p>}
+      <div className="section-head" style={{ marginTop: 28 }}>
+        <h3>Services</h3>
+      </div>
 
       <ul className="list">
         {services.data?.map((s) => {
           const inEnv = s.instances.find((i) => i.environmentName === environment);
           return (
-            <li key={s.id} className="card-row">
-              <div>
-                <strong>{s.name}</strong> <span className="pill">{s.kind}</span>{" "}
-                <span className="muted">{s.source}</span>
-              </div>
-              <div className="chips">
-                {s.instances.map((i) => (
-                  <span key={i.id} className="chip">
-                    {i.environmentName}
-                  </span>
-                ))}
-                {inEnv && (
-                  <button
-                    className="ghost small"
-                    onClick={() => setDeploying({ instanceId: inEnv.id, serviceName: s.name, source: s.source })}
-                  >
-                    Deployments
-                  </button>
-                )}
-              </div>
+            <li key={s.id}>
+              <button
+                className={open?.serviceId === s.id ? "row selected" : "row"}
+                disabled={!inEnv}
+                onClick={() =>
+                  inEnv && setOpen({ serviceId: s.id, instanceId: inEnv.id, name: s.name, kind: s.kind, source: s.source })
+                }
+              >
+                <span>
+                  <strong>{s.name}</strong> <span className="pill">{s.kind}</span>{" "}
+                  <span className="muted">{s.source}</span>
+                </span>
+                <span className="chips">
+                  {s.instances.map((i) => (
+                    <span key={i.id} className="chip">
+                      {i.environmentName}
+                    </span>
+                  ))}
+                </span>
+              </button>
             </li>
           );
         })}
         {services.data?.length === 0 && <li className="muted">No services yet.</li>}
       </ul>
 
-      {deploying && (
-        <>
-          <DeploymentsPanel
-            key={deploying.instanceId}
-            instanceId={deploying.instanceId}
-            serviceName={deploying.serviceName}
-            environmentName={environment}
-            source={deploying.source}
-            canWrite={canWrite}
-            onClose={() => setDeploying(null)}
-          />
-          <VariablesPanel key={`${deploying.instanceId}-vars`} instanceId={deploying.instanceId} canWrite={canWrite} />
-          <MetricsPanel key={`${deploying.instanceId}-metrics`} instanceId={deploying.instanceId} />
-          <LogsPanel key={`${deploying.instanceId}-logs`} instanceId={deploying.instanceId} />
-          <DomainsPanel key={`${deploying.instanceId}-domains`} instanceId={deploying.instanceId} canWrite={canWrite} />
-        </>
+      {canWrite && (
+        <div className="disclose">
+          {!addingService ? (
+            <button className="disclose-trigger" onClick={() => setAddingService(true)}>
+              + Add service
+            </button>
+          ) : (
+            <form className="disclose-body inline wrap" onSubmit={createService}>
+              <input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="service-name"
+                autoFocus
+              />
+              <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+                {KINDS.map((k) => (
+                  <option key={k}>{k}</option>
+                ))}
+              </select>
+              <select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+                {SOURCES.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+              <button type="submit" disabled={!form.name.trim()}>
+                Create
+              </button>
+              <button type="button" className="ghost" onClick={() => setAddingService(false)}>
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {open && openInstance && openService && (
+        <ServiceInspector
+          instanceId={open.instanceId}
+          serviceName={open.name}
+          environmentName={openInstance.environmentName}
+          kind={open.kind}
+          source={open.source}
+          canWrite={canWrite}
+          onClose={() => setOpen(null)}
+        />
       )}
     </section>
   );
