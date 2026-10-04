@@ -18,6 +18,8 @@ import { createBackupWorker } from "./backup/worker.js";
 import { LocalFsObjectStorageProvider } from "./storage/local-fs.js";
 import { PostgresUsageStore } from "./usage/postgres-store.js";
 import { createUsageWorker } from "./usage/worker.js";
+import { PostgresBillingStore } from "./billing/postgres-store.js";
+import { createBillingWorker } from "./billing/worker.js";
 import { PostgresCronStore } from "./cron/postgres-store.js";
 import { registerCronSchedules } from "./cron/scheduler.js";
 import { PostgresWebhookStore } from "./webhooks/postgres-store.js";
@@ -114,6 +116,14 @@ const usageWorker = createUsageWorker(connection, {
   runtime,
 });
 
+// Billing (roadmap.md Phase 4): closes a billing period's usage_events into a draft invoice per
+// subscribed organization. No monthly schedule is wired here yet either -- see
+// workers/src/billing/worker.ts (enqueueCloseBillingPeriodForAllOrganizations) for how that would
+// be connected, the same way usage/worker.ts documents scheduleUsageSampling.
+const billingWorker = createBillingWorker(connection, {
+  store: new PostgresBillingStore(db),
+});
+
 // Outbound webhooks (roadmap.md Phase 5): delivery via Node's native fetch (FetchWebhookTransport,
 // the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
 // subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
@@ -128,6 +138,7 @@ async function shutdown(): Promise<void> {
   await domainWorker.close();
   await backupWorker.close();
   await usageWorker.close();
+  await billingWorker.close();
   await deploymentsQueue.close();
   await cronQueue.close();
   await webhookWorker.close();

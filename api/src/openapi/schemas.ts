@@ -232,6 +232,50 @@ export const UsageSummaryItemSchema = z.object({
   sampleCount: z.number().int(),
 });
 
+// Reference pricing data, seeded by migration (db/src/schema.ts: `plans`) -- never created through
+// the API, so there's no corresponding CreatePlanBody.
+export const PlanSchema = z.object({
+  id: uuid,
+  slug: z.string(),
+  name: z.string(),
+  pricePerReplicaMinuteCents: z.number().int(),
+  includedReplicaMinutes: z.number().int(),
+});
+
+// An organization with no subscription has never picked a plan and isn't billed (api/src/routes/billing.ts).
+export const SubscriptionSchema = z.object({
+  organizationId: uuid,
+  plan: PlanSchema,
+  status: z.enum(["active", "canceled"]),
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+
+export const InvoiceLineItemSchema = z.object({
+  id: uuid,
+  projectId: uuid.nullable(),
+  projectName: z.string().nullable(),
+  description: z.string(),
+  replicaMinutes: z.number().int(),
+  amountCents: z.number().int(),
+});
+
+export const InvoiceSchema = z.object({
+  id: uuid,
+  organizationId: uuid,
+  periodStart: timestamp,
+  periodEnd: timestamp,
+  status: z.enum(["draft", "finalized"]),
+  totalCents: z.number().int(),
+  currency: z.string(),
+  finalizedAt: timestamp.nullable(),
+  createdAt: timestamp,
+});
+
+export const InvoiceDetailSchema = InvoiceSchema.extend({
+  lineItems: z.array(InvoiceLineItemSchema),
+});
+
 // Basic runtime snapshot of an instance (architecture.md §9, §10). No time series in the MVP:
 // `from`/`to`/`metric` stay documented on the query so the contract already foresees that future.
 export const MetricsSnapshotSchema = z.object({

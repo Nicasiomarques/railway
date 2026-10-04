@@ -43,6 +43,12 @@ export const environmentProvisioningStatus = pgEnum("environment_provisioning_st
   "ready",
   "failed",
 ]);
+export const subscriptionStatus = pgEnum("subscription_status", ["active", "canceled"]);
+// "draft": created and line items populated by the billing worker; "finalized": closed, amounts
+// immutable from this point (architecture.md's usage_events are append-only, so a finalized invoice
+// is what makes a historical period's cost stable even as new usage_events keep arriving for the
+// current period).
+export const invoiceStatus = pgEnum("invoice_status", ["draft", "finalized"]);
 
 // Identity comes from an external provider; we only store the link.
 export const users = pgTable(
@@ -393,6 +399,88 @@ export const usageEvents = pgTable(
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
   },
   (t) => [index("usage_events_project_time_idx").on(t.projectId, t.occurredAt)],
+);
+
+// Billing (roadmap.md Phase 4: "Billing on top of usage_events"). Pricing tiers are reference data,
+// not user input: seeded by the migration that creates this table (api/drizzle), updated only by a
+// future migration, never through the API. pricePerReplicaMinuteCents and includedReplicaMinutes
+// are both scoped to the "replica_minutes" metric, the only one the usage worker writes today
+// (workers/src/usage/worker.ts); a plan covering another metric would need its own column, not a
+// generic schema, since the billing worker has to know how to combine them.
+export const plans = pgTable(
+  "plans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    pricePerReplicaMinuteCents: integer("price_per_replica_minute_cents").notNull(),
+    includedReplicaMinutes: integer("included_replica_minutes").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("plans_slug_idx").on(t.slug)],
+);
+
+// One row per organization: an org with no row here has never picked a plan and isn't billed
+// (the billing worker skips it, same as an instance with no workload is skipped by the usage
+// worker). Unlike memberships (composite PK, many rows per org), a subscription is 1:1 with its
+// organization, so the organization_id itself is the primary key.
+export const organizationSubscriptions = pgTable("organization_subscriptions", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => organizations.id),
+  planId: uuid("plan_id")
+    .notNull()
+    .references(() => plans.id),
+  status: subscriptionStatus("status").notNull().default("active"),
+  ...timestamps,
+});
+
+// One invoice per organization per billed period. periodStart/periodEnd are the half-open range
+// [start, end) the billing worker summed usage_events over -- same convention as the usage API's
+// from/to (api/src/routes/usage.ts).
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    planId: uuid("plan_id")
+      .notNull()
+      .references(() => plans.id),
+    periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+    periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+    status: invoiceStatus("status").notNull().default("draft"),
+    totalCents: integer("total_cents").notNull().default(0),
+    currency: text("currency").notNull().default("usd"),
+    finalizedAt: timestamp("finalized_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    // The billing worker re-running for a period it already closed must update that invoice, not
+    // duplicate it (mirrors reconcileJobId/runBackupJobId: one unit of work, one stable identity).
+    uniqueIndex("invoices_org_period_idx").on(t.organizationId, t.periodStart, t.periodEnd),
+    index("invoices_org_idx").on(t.organizationId),
+  ],
+);
+
+// One line item per project per invoice (mirrors the per-project grouping in the usage API), so a
+// customer can see which project drove the charge. Append-only alongside its invoice: regenerating
+// an invoice (see the worker) replaces all of its line items in one transaction.
+export const invoiceLineItems = pgTable(
+  "invoice_line_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id),
+    projectId: uuid("project_id").references(() => projects.id),
+    description: text("description").notNull(),
+    replicaMinutes: integer("replica_minutes").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("invoice_line_items_invoice_idx").on(t.invoiceId)],
 );
 
 // Append-only.
