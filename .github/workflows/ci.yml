@@ -54,3 +54,48 @@ jobs:
       - name: Test workers (unit tests only)
         working-directory: workers
         run: npx vitest run --exclude "**/*.integration.test.ts"
+
+  # Phase 3 (docs/roadmap.md): "isolation tests" from architecture.md §7.2/§12 (default-deny
+  # NetworkPolicy, ResourceQuota/LimitRange, Pod Security `restricted`) running against a real
+  # cluster, not just as unit tests against in-memory objects. Separate job so a transient k3d
+  # failure never blocks the fast `build` job above.
+  #
+  # Deliberately NOT covered here (still Phase 3 follow-up, see docs/slos.md):
+  # - Build sandbox tests (k8s-builder.integration.test.ts, gvisor-spike.integration.test.ts):
+  #   need a pushed-to registry + an HTTP-served git repo, and gVisor needs node-level surgery
+  #   (infra/spike/gvisor/install.sh). Heavier and more flake-prone; not attempted here yet.
+  # - Postgres/Redis-only integration tests (reconciler, provisioning, decommission stores):
+  #   no isolation claim to verify; still need wiring into some CI job, but that's a correctness
+  #   gap, not the observability/isolation one this job targets.
+  isolation:
+    runs-on: ubuntu-latest
+    continue-on-error: true # first run against real GitHub Actions infra; see docs/slos.md.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same tool and cluster shape as infra/README.md's local dev setup, just named for CI and
+      # without the registry (these two tests pull public images by digest, they don't build).
+      - name: Install k3d
+        run: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+
+      - name: Create k3d cluster
+        run: k3d cluster create railway-ci --agents 1 --wait --timeout 120s
+
+      - name: Workload and environment isolation tests (real cluster)
+        working-directory: workers
+        run: npx vitest run src/runtime/k8s.integration.test.ts src/runtime/k8s.environment.integration.test.ts
+        env:
+          K8S_TEST_CONTEXT: k3d-railway-ci
+
+      - name: Delete k3d cluster
+        if: always()
+        run: k3d cluster delete railway-ci

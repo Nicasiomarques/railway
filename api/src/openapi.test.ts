@@ -78,6 +78,7 @@ describe("OpenAPI contract", () => {
         "post /v1/services/{instanceId}/volumes",
         "get /v1/services/{instanceId}/volumes",
         "post /v1/volumes/{volumeId}/backup",
+        "post /v1/volumes/{volumeId}/restore",
         "post /v1/organizations/{organizationId}/webhook-subscriptions",
         "get /v1/organizations/{organizationId}/webhook-subscriptions",
         "delete /v1/organizations/{organizationId}/webhook-subscriptions/{subscriptionId}",

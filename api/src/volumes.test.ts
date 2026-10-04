@@ -9,19 +9,24 @@ import type { BackupQueue } from "./queue.js";
 
 function fakeBackupQueue() {
   const calls: { volumeId: string }[] = [];
+  const restoreCalls: { volumeId: string }[] = [];
   const queue: BackupQueue = {
     async enqueueRunBackup(data) {
       calls.push(data);
     },
+    async enqueueRestoreBackup(data) {
+      restoreCalls.push(data);
+    },
   };
-  return { queue, calls };
+  return { queue, calls, restoreCalls };
 }
 
-const { queue: backupQueue, calls: backupCalls } = fakeBackupQueue();
+const { queue: backupQueue, calls: backupCalls, restoreCalls } = fakeBackupQueue();
 const app = buildApp(db, { keyring: testKeyring(), backupQueue });
 
 beforeEach(async () => {
   backupCalls.length = 0;
+  restoreCalls.length = 0;
   const { rows } = await db.execute<{ tablename: string }>(
     sql`select tablename from pg_tables where schemaname = 'public' and tablename not in ('__drizzle_migrations', 'regions')`,
   );
@@ -206,6 +211,71 @@ describe("triggering a backup", () => {
 
     const { rows } = await db.execute<{ organization_id: string; target: string }>(
       sql`select organization_id, target from audit_logs where action = 'volume.backup_triggered'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organization_id).toBe(orgId);
+    expect(rows[0].target).toBe(`volume:${volumeId}`);
+  });
+});
+
+// Phase 3 (docs/roadmap.md) "Backup restore testing": the route side of restore existed nowhere
+// before this — just the provider method. See docs/runbooks/backup-restore.md for when to call this.
+describe("triggering a restore", () => {
+  async function createdVolumeId(token: string, instanceId: string): Promise<string> {
+    const res = await createVolume(token, instanceId, { mountPath: "/data", sizeGb: 5 });
+    return res.json().id;
+  }
+
+  it("enqueues a restore-backup job and returns 202 with the volume", async () => {
+    const { token, instanceId } = await setup();
+    const volumeId = await createdVolumeId(token, instanceId);
+
+    const res = await app.inject({ method: "POST", url: `/v1/volumes/${volumeId}/restore`, headers: auth(token) });
+
+    expect(res.statusCode).toBe(202);
+    expect(res.json().id).toBe(volumeId);
+    expect(restoreCalls).toEqual([{ volumeId }]);
+  });
+
+  it("returns 404 for a volume that doesn't exist", async () => {
+    const { token } = await setup();
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/volumes/00000000-0000-0000-0000-000000000000/restore`,
+      headers: auth(token),
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("volume_not_found");
+  });
+
+  it("blocks a viewer from triggering a restore", async () => {
+    const { token, orgId, instanceId } = await setup();
+    const volumeId = await createdVolumeId(token, instanceId);
+    const viewer = await createUserWithToken(db, "viewer");
+    await db.insert(memberships).values({ organizationId: orgId, userId: viewer.user.id, role: "viewer" });
+
+    const res = await app.inject({ method: "POST", url: `/v1/volumes/${volumeId}/restore`, headers: auth(viewer.token) });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 404 (not the other org's details) for a volume owned by another organization", async () => {
+    const { token, instanceId } = await setup();
+    const volumeId = await createdVolumeId(token, instanceId);
+    const outsider = await createUserWithToken(db, "outsider");
+
+    const res = await app.inject({ method: "POST", url: `/v1/volumes/${volumeId}/restore`, headers: auth(outsider.token) });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("volume_not_found");
+  });
+
+  it("writes an audit log entry when a restore is triggered", async () => {
+    const { token, orgId, instanceId } = await setup();
+    const volumeId = await createdVolumeId(token, instanceId);
+
+    await app.inject({ method: "POST", url: `/v1/volumes/${volumeId}/restore`, headers: auth(token) });
+
+    const { rows } = await db.execute<{ organization_id: string; target: string }>(
+      sql`select organization_id, target from audit_logs where action = 'volume.restore_triggered'`,
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].organization_id).toBe(orgId);
