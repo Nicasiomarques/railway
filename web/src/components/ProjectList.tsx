@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, ApiProblem, type Organization, type Project } from "../api";
-import { AuditLogPanel } from "./AuditLogPanel";
 
 export function ProjectList({
   org,
@@ -11,6 +10,7 @@ export function ProjectList({
   onOpen: (project: { id: string; name: string }) => void;
 }) {
   const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +30,7 @@ export function ProjectList({
         json: { organizationId: org.id, name },
       });
       setName("");
+      setAdding(false);
       queryClient.invalidateQueries({ queryKey: ["projects", org.id] });
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error creating project.");
@@ -43,16 +44,15 @@ export function ProjectList({
         <span className="pill">{org.role}</span>
       </div>
 
-      {org.role !== "viewer" && (
-        <form className="inline" onSubmit={create}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New project name" />
-          <button type="submit" disabled={!name.trim()}>
-            Create project
-          </button>
-        </form>
-      )}
       {error && <p className="error">{error}</p>}
 
+      {projects.isLoading && (
+        <ul className="list">
+          <li className="skeleton" style={{ height: 40 }} />
+          <li className="skeleton" style={{ height: 40 }} />
+          <li className="skeleton" style={{ height: 40 }} />
+        </ul>
+      )}
       <ul className="list">
         {projects.data?.map((p) => (
           <li key={p.id}>
@@ -65,9 +65,25 @@ export function ProjectList({
         {projects.data?.length === 0 && <li className="muted">No projects yet.</li>}
       </ul>
 
-      {/* Audit logs are organization-wide (api/src/routes/domains.ts and friends write them with an
-          organizationId, not a projectId), so this lives here rather than inside a single project. */}
-      <AuditLogPanel organizationId={org.id} />
+      {org.role !== "viewer" && (
+        <div className="disclose">
+          {!adding ? (
+            <button className="disclose-trigger" onClick={() => setAdding(true)}>
+              + New project
+            </button>
+          ) : (
+            <form className="disclose-body inline wrap" onSubmit={create}>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New project name" autoFocus />
+              <button type="submit" disabled={!name.trim()}>
+                Create
+              </button>
+              <button type="button" className="ghost" onClick={() => setAdding(false)}>
+                Cancel
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </section>
   );
 }
