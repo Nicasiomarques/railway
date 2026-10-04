@@ -42,11 +42,20 @@ export const OrganizationSummarySchema = z.object({
 export const ProjectSchema = z.object({
   id: uuid,
   organizationId: uuid,
+  // Multi-region (roadmap.md Phase 4). Defaults to the single default region when omitted at
+  // creation -- see db/src/schema.ts's DEFAULT_REGION_ID.
+  regionId: uuid,
   name: z.string(),
   slug: z.string(),
   createdAt: timestamp,
   updatedAt: timestamp,
   deletedAt: timestamp.nullable(),
+});
+
+export const RegionSchema = z.object({
+  id: uuid,
+  slug: z.string(),
+  name: z.string(),
 });
 
 export const EnvironmentSchema = z.object({

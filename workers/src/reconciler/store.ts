@@ -6,6 +6,10 @@ export interface DeploymentRecord {
   id: string;
   serviceInstanceId: string;
   environmentId: string;
+  // The owning project's region (db/src/schema.ts's projects.regionId), read live at reconcile
+  // time: which cluster this deployment's RuntimeAdapter comes from (see reconcile.ts's use of
+  // RuntimeRegistry).
+  regionId: string;
   versionNo: number;
   status: DeploymentStatus;
   // Image by digest. Null while the deployment hasn't been built yet (github_repo source).

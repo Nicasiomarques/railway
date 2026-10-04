@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { workloadName } from "../runtime/adapter.js";
 import { InMemoryRuntime } from "../runtime/in-memory.js";
+import { SingleRegionRuntimeRegistry } from "../runtime/registry.js";
 import { addDeployment, resetDb, seedInstance } from "../test/fixtures.js";
 import { handleReconcileJob, reconcileInstance } from "./reconcile.js";
 import { PostgresDeploymentStore } from "./postgres-store.js";
@@ -43,7 +44,7 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     const instanceId = await seedInstance(db);
     const id = await addDeployment(db, instanceId, 1, "Deploying", null);
 
-    const result = await handleReconcileJob({ store, runtime: new InMemoryRuntime() }, { serviceInstanceId: instanceId }, { attemptsMade: 0, maxAttempts: 3 });
+    const result = await handleReconcileJob({ store, runtime: new SingleRegionRuntimeRegistry(new InMemoryRuntime()) }, { serviceInstanceId: instanceId }, { attemptsMade: 0, maxAttempts: 3 });
 
     expect(result).toEqual({ kind: "failed", deploymentId: id });
     const [row] = await db.select({ status: deployments.status }).from(deployments).where(eq(deployments.id, id));
@@ -88,10 +89,11 @@ describe.skipIf(!DATABASE_URL)("PostgresDeploymentStore", () => {
     const next = await addDeployment(db, instanceId, 2, "Deploying", "registry.local/app@sha256:bbb");
     const runtime = new InMemoryRuntime();
 
-    const pending = await reconcileInstance({ store, runtime }, instanceId);
+    const registry = new SingleRegionRuntimeRegistry(runtime);
+    const pending = await reconcileInstance({ store, runtime: registry }, instanceId);
     expect(pending.kind).toBe("pending");
     runtime.markReady(workloadName(instanceId));
-    const done = await reconcileInstance({ store, runtime }, instanceId);
+    const done = await reconcileInstance({ store, runtime: registry }, instanceId);
 
     expect(done).toEqual({ kind: "converged", deploymentId: next });
     const rows = await db.select({ id: deployments.id, status: deployments.status }).from(deployments);

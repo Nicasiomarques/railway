@@ -1,12 +1,15 @@
 import { transition, type DeploymentStatus } from "@railway-like/shared";
-import { namespaceFor, workloadName, type RuntimeAdapter, type WorkloadSpec, type WorkloadStatus } from "../runtime/adapter.js";
+import { namespaceFor, workloadName, type RuntimeRegistry, type WorkloadSpec, type WorkloadStatus } from "../runtime/adapter.js";
 import type { BuildRequest, Builder } from "../build/builder.js";
 import { PermanentError } from "./errors.js";
 import type { DeploymentRecord, DeploymentStore } from "./store.js";
 
 export interface ReconcilerDeps {
   store: DeploymentStore;
-  runtime: RuntimeAdapter;
+  // Resolved per deployment by its project's region (multi-region, roadmap.md Phase 4) -- see
+  // runtime/registry.ts. A single-region setup passes a SingleRegionRuntimeRegistry wrapping one
+  // RuntimeAdapter, so every regionId still reaches the same cluster as before this existed.
+  runtime: RuntimeRegistry;
   // Required for repository deployments. Without it, those deployments fail permanently.
   builder?: Builder;
 }
@@ -64,13 +67,15 @@ async function reconcileDeployment(deps: ReconcilerDeps, d: DeploymentRecord): P
   if (!image) throw new PermanentError(`deployment ${rec.id} has no image_digest: cannot converge`, rec.id);
   const spec = specFor({ ...rec, imageDigest: image });
 
+  const runtime = deps.runtime.forRegion(rec.regionId);
+
   if (phase === "Deploying") {
-    await deps.runtime.applyWorkload(spec);
+    await runtime.applyWorkload(spec);
     if (!(await advance(deps.store, rec.id, "Deploying", "HealthChecking"))) return null;
   }
 
   // From here on the deployment is in HealthChecking.
-  const status = await deps.runtime.getStatus({ name: spec.name, namespace: spec.namespace });
+  const status = await runtime.getStatus({ name: spec.name, namespace: spec.namespace });
   if (!isReady(status, spec)) {
     return { kind: "pending", deploymentId: rec.id, reason: "replicas are not ready yet", phase: "HealthChecking" };
   }

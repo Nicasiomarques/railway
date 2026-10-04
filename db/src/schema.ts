@@ -89,6 +89,26 @@ export const memberships = pgTable(
   (t) => [primaryKey({ columns: [t.organizationId, t.userId] })],
 );
 
+// Multi-region (roadmap.md Phase 4). Seeded by migration 0012 with one row carrying this fixed id,
+// so every project created before regions existed backfills to it (projects.regionId's default)
+// and single-cluster deployments need no region management at all -- see
+// workers/src/runtime/registry.ts for how a regionId becomes a RuntimeAdapter.
+export const DEFAULT_REGION_ID = "00000000-0000-0000-0000-000000000001";
+
+export const regions = pgTable(
+  "regions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    // The kubeconfig context this region's cluster runs on. Null means "whatever the kubeconfig's
+    // own current-context is" -- the single-cluster behavior from before this table existed.
+    kubeContext: text("kube_context"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("regions_slug_idx").on(t.slug)],
+);
+
 export const projects = pgTable(
   "projects",
   {
@@ -96,6 +116,10 @@ export const projects = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
+    regionId: uuid("region_id")
+      .notNull()
+      .default(DEFAULT_REGION_ID)
+      .references(() => regions.id),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     ...timestamps,

@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
-import { buildLogs, deploymentEvents, deployments, serviceInstances, services, type Db } from "@railway-like/db";
+import { buildLogs, deploymentEvents, deployments, projects, serviceInstances, services, type Db } from "@railway-like/db";
 import type { DeploymentStatus } from "@railway-like/shared";
 import type { DeploymentRecord, DeploymentStore } from "./store.js";
 import { PermanentError } from "./errors.js";
@@ -24,6 +24,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
         environmentId: serviceInstances.environmentId,
         repoUrl: services.repoUrl,
         rootDir: services.rootDir,
+        regionId: projects.regionId,
         autoscalingEnabled: serviceInstances.autoscalingEnabled,
         minReplicas: serviceInstances.minReplicas,
         maxReplicas: serviceInstances.maxReplicas,
@@ -33,6 +34,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
       .from(deployments)
       .innerJoin(serviceInstances, eq(serviceInstances.id, deployments.serviceInstanceId))
       .innerJoin(services, eq(services.id, serviceInstances.serviceId))
+      .innerJoin(projects, eq(projects.id, services.projectId))
       .where(
         and(
           eq(deployments.serviceInstanceId, serviceInstanceId),
@@ -48,6 +50,7 @@ export class PostgresDeploymentStore implements DeploymentStore {
       id: d.id,
       serviceInstanceId: d.serviceInstanceId,
       environmentId: row.environmentId,
+      regionId: row.regionId,
       versionNo: d.versionNo,
       status: d.status,
       imageDigest: d.imageDigest,

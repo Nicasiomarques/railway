@@ -19,6 +19,7 @@ import { usageRoutes } from "./routes/usage.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { billingRoutes } from "./routes/billing.js";
 import { autoscalingRoutes } from "./routes/autoscaling.js";
+import { regionRoutes } from "./routes/regions.js";
 import type { Keyring } from "./crypto/envelope.js";
 import { registerOpenApi } from "./openapi/index.js";
 import { docsRoutes } from "./openapi/docs.js";
@@ -87,6 +88,7 @@ export function buildApp(
     async (v1) => {
       v1.addHook("onRequest", authenticate(db));
       await v1.register(organizationRoutes, { db });
+      await v1.register(regionRoutes, { db });
       await v1.register(usageRoutes, { db });
       await v1.register(billingRoutes, { db });
       await v1.register(projectRoutes, { db });

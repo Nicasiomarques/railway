@@ -52,6 +52,14 @@ export interface RuntimeAdapter {
   tailLogs(ref: WorkloadRef, opts?: { since?: string }): AsyncIterable<string>;
 }
 
+// Multi-region (roadmap.md Phase 4). A region is, concretely, one Kubernetes cluster: the reconciler
+// resolves the RuntimeAdapter for a deployment's project by its regionId instead of talking to a
+// single cluster directly (see runtime/registry.ts for the implementations, and db/src/schema.ts's
+// `regions` table / `projects.regionId` for where the id comes from).
+export interface RuntimeRegistry {
+  forRegion(regionId: string): RuntimeAdapter;
+}
+
 export function workloadName(serviceInstanceId: string): string {
   return `wl-${serviceInstanceId}`;
 }
