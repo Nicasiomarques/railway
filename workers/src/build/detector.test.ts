@@ -114,12 +114,32 @@ describe("stack detector", () => {
     expect(result.dockerfile).toContain(`FROM maven:3.9-eclipse-temurin-21 AS build`);
   });
 
+  it("Java/Maven with a two-digit java.version (e.g. 17) is not truncated", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>17</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-17 AS build");
+  });
+
+  it("Java/Maven with a two-digit java.version (e.g. 11) is not truncated", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>11</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-11 AS build");
+  });
+
+  it("Java/Maven with the legacy 1.8 notation resolves to 8", () => {
+    const result = detect(tree({ "pom.xml": "<project><properties><maven.compiler.source>1.8</maven.compiler.source></properties></project>" }));
+    expect(result.dockerfile).toContain("FROM maven:3.9-eclipse-temurin-8 AS build");
+  });
+
   it("Java/Gradle with sourceCompatibility", () => {
     const result = detect(tree({ "build.gradle": "sourceCompatibility = '21'\n" }));
     expect(result.kind).toBe("java");
     expect(result.dockerfile).toContain("FROM gradle:8-jdk21 AS build");
     expect(result.dockerfile).toContain("RUN gradle build -x test --no-daemon");
     expect(result.dockerfile).toContain("COPY --from=build /app/build/libs/*.jar /app/app.jar");
+  });
+
+  it("Java/Gradle with a two-digit sourceCompatibility (e.g. 17) is not truncated", () => {
+    const result = detect(tree({ "build.gradle": "sourceCompatibility = '17'\n" }));
+    expect(result.dockerfile).toContain("FROM gradle:8-jdk17 AS build");
   });
 
   it("pom.xml takes priority over package.json (frontend assets alongside a Java backend)", () => {

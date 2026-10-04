@@ -67,16 +67,20 @@ export function ServiceCanvas({
     return { x: side === "right" ? p.x + NODE_W : p.x, y: p.y + NODE_H / 2 };
   };
 
-  // Persist to the backend with a debounce: dragging fires a position update per pointermove.
-  useEffect(() => {
+  // Persists to the backend with a debounce: dragging fires a position update per pointermove.
+  // Called only from the actions that actually change the layout (drag, reset) -- never from the
+  // resync effect above -- so loading or refetching the saved layout doesn't write it right back.
+  function scheduleSave(next: Record<string, Pos>) {
     if (!canWrite) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => onLayoutChange(positions), SAVE_DEBOUNCE_MS);
+    saveTimer.current = setTimeout(() => onLayoutChange(next), SAVE_DEBOUNCE_MS);
+  }
+
+  useEffect(() => {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- onLayoutChange identity isn't part of the debounce key
-  }, [positions, canWrite]);
+  }, []);
 
   function onNodePointerDown(e: React.PointerEvent<HTMLDivElement>, node: Node, index: number) {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -89,7 +93,11 @@ export function ServiceCanvas({
     if (!d) return;
     const x = Math.max(0, d.origX + e.clientX - d.startX);
     const y = Math.max(0, d.origY + e.clientY - d.startY);
-    setPositions((p) => ({ ...p, [d.id]: { x, y } }));
+    setPositions((p) => {
+      const next = { ...p, [d.id]: { x, y } };
+      scheduleSave(next);
+      return next;
+    });
   }
 
   function onNodePointerUp() {
@@ -123,6 +131,7 @@ export function ServiceCanvas({
 
   function resetLayout() {
     setPositions({});
+    scheduleSave({});
   }
 
   const visibleConnections = connections.filter(

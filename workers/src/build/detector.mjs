@@ -182,14 +182,16 @@ function detectJava(tree) {
   return { kind: "java", dockerfile: dockerfile.join("\n") + "\n", justification };
 }
 
-/** Java version declared in a pom.xml or build.gradle(.kts) (e.g. "17", "21"). */
+/** Java version declared in a pom.xml or build.gradle(.kts) (e.g. "17", "21", legacy "1.8" -> "8"). */
 function javaVersion(content) {
+  // `(?:1\.)?` strips the legacy "1.N" prefix (Java 8 and earlier) without also eating the
+  // leading "1" of a modern two-digit version like "11" or "17" -- a bare `1?` would.
   const m =
     /<java\.version>\s*(\d+)/.exec(content) ??
     /<maven\.compiler\.release>\s*(\d+)/.exec(content) ??
-    /<maven\.compiler\.source>\s*1?\.?(\d+)/.exec(content) ??
+    /<maven\.compiler\.source>\s*(?:1\.)?(\d+)/.exec(content) ??
     /JavaVersion\.VERSION_(\d+)/.exec(content) ??
-    /sourceCompatibility\s*=?\s*['"]?1?\.?(\d+)/.exec(content);
+    /sourceCompatibility\s*=?\s*['"]?(?:1\.)?(\d+)/.exec(content);
   return m ? m[1] : null;
 }
 

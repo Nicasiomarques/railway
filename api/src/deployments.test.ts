@@ -344,6 +344,18 @@ describe("service and deployment source", () => {
     expect(res.json().imageDigest).toBe(DIGEST);
   });
 
+  it("a postgres_template service rejects commitSha even though an image would resolve", async () => {
+    const { token, instanceId } = await setupInstanceWithSource("postgres", "postgres_template");
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/services/${instanceId}/deployments`,
+      headers: auth(token),
+      payload: { commitSha: SHA },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("source_mismatch");
+  });
+
   it("a minio_template service without a pinned or explicit image is rejected", async () => {
     const { token, instanceId } = await setupInstanceWithSource("object_storage", "minio_template");
     const res = await app.inject({ method: "POST", url: `/v1/services/${instanceId}/deployments`, headers: auth(token), payload: {} });

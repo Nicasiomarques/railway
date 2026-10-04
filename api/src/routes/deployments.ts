@@ -309,6 +309,9 @@ export const deploymentRoutes: FastifyPluginAsync<{
       if (source.source === "github_repo" && !body.commitSha) {
         throw new ApiError(400, "source_mismatch", "A github_repo service requires commitSha, not imageDigest.");
       }
+      if (source.source !== "github_repo" && body.commitSha) {
+        throw new ApiError(400, "source_mismatch", "This service requires imageDigest, not commitSha.");
+      }
       // Templates (postgres_template, redis_template, minio_template) resolve to a pinned image when
       // the caller doesn't pass one, the same way github_repo resolves to one through the build.
       const imageDigest = source.source === "github_repo" ? null : body.imageDigest ?? resolveTemplateImage(source.source);
