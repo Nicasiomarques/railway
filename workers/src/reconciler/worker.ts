@@ -1,6 +1,7 @@
 import { Queue, Worker, type ConnectionOptions, type JobsOptions } from "bullmq";
 import {
   CANCEL_BUILD_JOB,
+  CRON_TRIGGER_JOB,
   DEPLOYMENTS_QUEUE,
   PROVISION_ENVIRONMENT_JOB,
   PROVISION_ENVIRONMENT_JOB_RETRY,
@@ -9,11 +10,13 @@ import {
   provisionEnvironmentJobId,
   reconcileJobId,
   type CancelBuildJobData,
+  type CronTriggerJobData,
   type ProvisionEnvironmentJobData,
   type ReconcileJobData,
 } from "@railway-like/shared";
 import { handleReconcileJob, type ReconcilerDeps } from "./reconcile.js";
 import { handleCancelBuildJob } from "../build/cancel.js";
+import { handleCronTriggerJob, type CronWorkerDeps } from "../cron/worker.js";
 import { handleProvisionEnvironmentJob, type ProvisioningDeps } from "../provisioning/saga.js";
 
 // Constants and contract come from @railway-like/shared: the API produces the jobs under the same rules.
@@ -35,9 +38,13 @@ export async function enqueueProvisionEnvironment(
 export interface WorkerDeps extends ReconcilerDeps {
   // Environment provisioning saga. Without it, provisioning jobs fail explicitly.
   provisioning?: ProvisioningDeps;
+  // Cron scheduling (workers/src/cron). Without it, a CRON_TRIGGER_JOB fails explicitly instead of
+  // silently never redeploying -- same shape as `provisioning` above.
+  cron?: CronWorkerDeps;
 }
 
-// One queue, three job types: reconciliation (converges the runtime), build cancellation, and environment provisioning.
+// One queue, four job types: reconciliation (converges the runtime), build cancellation,
+// environment provisioning, and cron triggers (redeploys a cron instance's last known build).
 export function createReconcileWorker(connection: ConnectionOptions, deps: WorkerDeps): Worker<DeploymentJobData> {
   return new Worker<DeploymentJobData>(
     DEPLOYMENTS_QUEUE,
@@ -50,6 +57,10 @@ export function createReconcileWorker(connection: ConnectionOptions, deps: Worke
           maxAttempts: job.opts.attempts ?? 1,
         });
       }
+      if (job.name === CRON_TRIGGER_JOB) {
+        if (!deps.cron) throw new Error("cron triggers have no store/queue configured");
+        return handleCronTriggerJob(deps.cron, job.data as CronTriggerJobData);
+      }
       return handleReconcileJob(deps, job.data as ReconcileJobData, {
         attemptsMade: job.attemptsMade,
         maxAttempts: job.opts.attempts ?? 1,
@@ -59,4 +70,4 @@ export function createReconcileWorker(connection: ConnectionOptions, deps: Worke
   );
 }
 
-type DeploymentJobData = ReconcileJobData | CancelBuildJobData | ProvisionEnvironmentJobData;
+type DeploymentJobData = ReconcileJobData | CancelBuildJobData | ProvisionEnvironmentJobData | CronTriggerJobData;

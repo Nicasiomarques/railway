@@ -19,7 +19,7 @@ export const createServiceBody = z
       .min(1)
       .max(63)
       .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use lowercase letters, numbers and hyphens"),
-    kind: z.enum(["web", "worker", "postgres", "redis"]),
+    kind: z.enum(["web", "worker", "postgres", "redis", "cron"]),
     source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
     rootDir: z
       .string()
@@ -33,6 +33,14 @@ export const createServiceBody = z
       .max(500)
       .regex(/^https?:\/\/\S+$/, "use an http(s) URL")
       .optional(),
+    // Only for kind "cron": a 5-field cron expression (minute hour day-of-month month day-of-week).
+    // Basic shape check only (each field is `*`, a number, or a comma/range/step expression made of
+    // digits, `*`, `-`, `/` and `,`) -- not a full parser, matching the task's "simple regex" ask.
+    schedule: z
+      .string()
+      .max(100)
+      .regex(/^(\*|[0-9*/,-]+)(\s+(\*|[0-9*/,-]+)){4}$/, "use a 5-field cron expression, e.g. \"0 3 * * *\"")
+      .optional(),
   })
   .superRefine((body, ctx) => {
     if (body.source === "github_repo" && !body.repoUrl) {
@@ -40,6 +48,12 @@ export const createServiceBody = z
     }
     if (body.source !== "github_repo" && body.repoUrl) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["repoUrl"], message: "repoUrl only exists for github_repo" });
+    }
+    if (body.kind === "cron" && !body.schedule) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["schedule"], message: "schedule is required for kind cron" });
+    }
+    if (body.kind !== "cron" && body.schedule) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["schedule"], message: "schedule only exists for kind cron" });
     }
   });
 
@@ -81,7 +95,9 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
           .limit(1);
         if (taken) throw new ApiError(409, "name_taken", `A service named "${body.name}" already exists.`);
 
-        const [service] = await tx.insert(services).values({ projectId, ...body }).returning();
+        // `schedule` lives on service_instances (one per environment), not on the service row itself.
+        const { schedule, ...serviceBody } = body;
+        const [service] = await tx.insert(services).values({ projectId, ...serviceBody }).returning();
 
         const envs = await tx
           .select({ id: environments.id })
@@ -90,7 +106,7 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
         const instances = envs.length
           ? await tx
               .insert(serviceInstances)
-              .values(envs.map((e) => ({ serviceId: service.id, environmentId: e.id })))
+              .values(envs.map((e) => ({ serviceId: service.id, environmentId: e.id, schedule: schedule ?? null })))
               .returning()
           : [];
 
@@ -147,6 +163,7 @@ export const serviceRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
           environmentId: row.instance.environmentId,
           environmentName: row.environmentName,
           replicas: row.instance.replicas,
+          schedule: row.instance.schedule,
         });
       }
       byService.set(row.service.id, entry);

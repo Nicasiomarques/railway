@@ -67,7 +67,7 @@ export const ServiceSchema = z.object({
   id: uuid,
   projectId: uuid,
   name: z.string(),
-  kind: z.enum(["web", "worker", "postgres", "redis"]),
+  kind: z.enum(["web", "worker", "postgres", "redis", "cron"]),
   source: z.enum(["github_repo", "image", "template", "postgres_template", "redis_template"]),
   rootDir: z.string(),
   repoUrl: z.string().nullable(),
@@ -85,6 +85,8 @@ export const ServiceInstanceSchema = z.object({
   replicas: z.number().int(),
   healthCheck: json.nullable(),
   overrides: json.nullable(),
+  // Cron expression (e.g. "0 3 * * *"); only set when the owning service's kind is "cron".
+  schedule: z.string().nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
   deletedAt: timestamp.nullable(),
@@ -96,6 +98,7 @@ export const ServiceInstanceSummarySchema = z.object({
   environmentId: uuid,
   environmentName: z.string().nullable(),
   replicas: z.number().int(),
+  schedule: z.string().nullable(),
 });
 
 export const ServiceWithInstancesSchema = ServiceSchema.extend({

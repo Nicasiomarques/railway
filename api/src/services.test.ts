@@ -94,7 +94,77 @@ describe("services", () => {
       method: "POST",
       url: `/v1/projects/${projectId}/services`,
       headers: auth(token),
-      payload: { name: "api", kind: "cron", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
+      payload: { name: "api", kind: "scheduled-task", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("validation_failed");
+  });
+
+  it("creates a cron service with a schedule, carried onto its instance", async () => {
+    const { token, projectId } = await setupProject();
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/services`,
+      headers: auth(token),
+      payload: {
+        name: "nightly-report",
+        kind: "cron",
+        source: "github_repo",
+        repoUrl: "https://github.com/acme/api.git",
+        schedule: "0 3 * * *",
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().kind).toBe("cron");
+    expect(res.json().instances).toHaveLength(1);
+
+    const list = await app.inject({ method: "GET", url: `/v1/projects/${projectId}/services`, headers: auth(token) });
+    expect(list.json().data[0].instances[0].schedule).toBe("0 3 * * *");
+  });
+
+  it("requires a schedule when creating a cron service", async () => {
+    const { token, projectId } = await setupProject();
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/services`,
+      headers: auth(token),
+      payload: { name: "nightly-report", kind: "cron", source: "github_repo", repoUrl: "https://github.com/acme/api.git" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("validation_failed");
+  });
+
+  it("rejects a malformed cron schedule", async () => {
+    const { token, projectId } = await setupProject();
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/services`,
+      headers: auth(token),
+      payload: {
+        name: "nightly-report",
+        kind: "cron",
+        source: "github_repo",
+        repoUrl: "https://github.com/acme/api.git",
+        schedule: "not-a-cron-expression",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe("validation_failed");
+  });
+
+  it("rejects a schedule on a non-cron service", async () => {
+    const { token, projectId } = await setupProject();
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/projects/${projectId}/services`,
+      headers: auth(token),
+      payload: {
+        name: "api",
+        kind: "web",
+        source: "github_repo",
+        repoUrl: "https://github.com/acme/api.git",
+        schedule: "0 3 * * *",
+      },
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().code).toBe("validation_failed");
