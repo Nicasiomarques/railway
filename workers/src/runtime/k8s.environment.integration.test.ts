@@ -76,7 +76,7 @@ describe.skipIf(!CONTEXT)("environment provisioning on the cluster", () => {
       "workload pod ready inside the provisioned environment",
     );
     expect(pod.spec?.containers[0]?.resources?.limits).toEqual({ cpu: "500m", memory: "512Mi" });
-  });
+  }, 200_000);
 
   it("re-applying the saga is idempotent", async () => {
     await runtime.ensureNamespace(namespace, environmentLabels("proj-int", environmentId));
