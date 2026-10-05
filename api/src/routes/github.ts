@@ -493,9 +493,10 @@ export const githubRoutes: FastifyPluginAsync<{
             request.log.warn({ err, deploymentId: dep.id }, "github push: failed to enqueue the reconciler");
           }
           if (pushOutcome.installationId !== null) {
-            await installationTokenClient.getInstallationToken(request.log, pushOutcome.installationId);
+            const token = await installationTokenClient.getInstallationToken(request.log, pushOutcome.installationId);
             await checksClient.upsertCheckRun(request.log, {
               installationId: pushOutcome.installationId,
+              token,
               repoId: pushOutcome.repoId,
               commitSha: dep.commitSha ?? "",
               name: "Build",

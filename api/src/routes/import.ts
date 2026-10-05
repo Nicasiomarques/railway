@@ -19,6 +19,17 @@ const importBody = z.object({
 
 const contextFor = (instanceId: string, key: string) => `variable:${instanceId}:${key}`;
 
+// Imported manifests (Heroku app.json, Render render.yaml, Railway export) don't carry an
+// isSecret flag of their own, unlike variables created through PUT /services/:id/variables
+// (variables.ts's upsertBody). Without this, every imported value - including things like
+// DATABASE_URL or SECRET_KEY_BASE - would land as isSecret:false and come back in plain text
+// to any member with read access. Same heuristic a human would use when naming these keys.
+const LIKELY_SECRET_KEY_RE = /(SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|APIKEY|CREDENTIAL|_DSN$|_URL$|CONNECTION_STRING|CERT|CLIENT_SECRET)/i;
+
+function isLikelySecretKey(key: string): boolean {
+  return LIKELY_SECRET_KEY_RE.test(key);
+}
+
 async function importVariables(tx: Tx, keyring: Keyring, instanceId: string, vars: Record<string, string>): Promise<void> {
   for (const [key, value] of Object.entries(vars)) {
     await tx.insert(variables).values({
@@ -26,7 +37,7 @@ async function importVariables(tx: Tx, keyring: Keyring, instanceId: string, var
       serviceInstanceId: instanceId,
       key,
       valueEnc: encryptValue(keyring, value, contextFor(instanceId, key)),
-      isSecret: false,
+      isSecret: isLikelySecretKey(key),
     });
   }
 }

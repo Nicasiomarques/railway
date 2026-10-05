@@ -42,6 +42,8 @@ export async function api<T>(
       problem.detail ?? res.statusText,
     );
   }
+  // DELETE endpoints (and any other 204) return an empty body - res.json() throws on that.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 

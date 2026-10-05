@@ -1,11 +1,16 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { ExtensionSchema, listOf } from "../openapi/schemas.js";
 import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
+import { encryptValue, type Keyring } from "../crypto/envelope.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, projects, webhookSubscriptions } from "../db/schema.js";
+
+// Ties the ciphertext to the specific extension's row: copying it to another one won't decrypt.
+const contextFor = (id: string) => `webhook_subscription:${id}`;
 
 // An extension (roadmap.md Phase 5 "extensions") is a webhook subscription with a manifest - a
 // name and description - attached. It's delivered through the exact same worker
@@ -51,7 +56,7 @@ async function requireWriteMembership(db: Db, userId: string, organizationId: st
   if (role === "viewer") throw new ApiError(403, "forbidden", "The 'viewer' role cannot modify extensions.");
 }
 
-export const extensionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
+export const extensionRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = async (app, { db, keyring }) => {
   app.post(
     "/organizations/:organizationId/extensions",
     {
@@ -81,15 +86,17 @@ export const extensionRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db 
         if (!project) throw new ApiError(404, "project_not_found", "Project not found.");
       }
 
+      const id = randomUUID();
       const [created] = await db
         .insert(webhookSubscriptions)
         .values({
+          id,
           organizationId,
           projectId: body.projectId ?? null,
           name: body.name,
           description: body.description,
           url: body.url,
-          secret: body.secret,
+          secret: encryptValue(keyring, body.secret, contextFor(id)),
           events: body.events,
           isActive: body.isActive,
         })

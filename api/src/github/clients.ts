@@ -24,6 +24,9 @@ export type GitHubCheckConclusion = "success" | "failure" | "cancelled";
 
 export interface GitHubCheckRunInput {
   installationId: bigint;
+  // The installation token from GitHubInstallationTokenClient.getInstallationToken, which a real
+  // implementation needs to authenticate the Checks API call. Unused by the noop implementation.
+  token: string;
   repoId: bigint;
   commitSha: string;
   name: string;

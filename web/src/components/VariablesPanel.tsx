@@ -13,8 +13,6 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
   const [editValue, setEditValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  // Keys whose "reveal" was explicitly requested; never populated by default.
-  const [revealed, setRevealed] = useState<Set<string>>(new Set());
 
   const list = useQuery({
     queryKey: ["variables", instanceId],
@@ -60,24 +58,10 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
     setError(null);
     try {
       await api(`/services/${instanceId}/variables/${key}`, { method: "DELETE" });
-      setRevealed((prev) => {
-        const next = new Set(prev);
-        next.delete(key);
-        return next;
-      });
       queryClient.invalidateQueries({ queryKey: ["variables", instanceId] });
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error removing variable.");
     }
-  }
-
-  function toggleReveal(key: string) {
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   }
 
   // Click-to-edit: starts inline editing for the clicked variable. Secrets start blank (the API
@@ -142,14 +126,10 @@ export function VariablesPanel({ instanceId, canWrite }: { instanceId: string; c
                     {v.isSecret && <span className="chip">secret</span>}
                   </div>
                   <div className="var-value">
+                    {/* The API never returns a secret's value (variables.ts) - there's nothing to reveal here. */}
                     <code onClick={() => canWrite && startEdit(v)} style={canWrite ? { cursor: "pointer" } : undefined}>
-                      {v.isSecret ? (revealed.has(v.key) ? "•••• (hidden by the API)" : "••••••") : v.value}
+                      {v.isSecret ? "•••• (hidden by the API)" : v.value}
                     </code>
-                    {v.isSecret && (
-                      <button className="ghost small" onClick={() => toggleReveal(v.key)}>
-                        {revealed.has(v.key) ? "Hide" : "Reveal"}
-                      </button>
-                    )}
                     {canWrite && (
                       <div className="var-actions">
                         <button className="ghost small" onClick={() => startEdit(v)}>

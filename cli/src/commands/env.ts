@@ -32,7 +32,7 @@ export async function envSetCommand(assignment: string, opts: { instance?: strin
   const result = await apiRequest<{ key: string; version: number }>(
     ctx,
     "PUT",
-    `/services/${instanceId}/variables/${key}`,
+    `/services/${instanceId}/variables/${encodeURIComponent(key)}`,
     { json: { value, isSecret: opts.secret ?? false } },
   );
   console.log(`${result.key} saved (version ${result.version}).`);
@@ -42,6 +42,6 @@ export async function envUnsetCommand(key: string, opts: { instance?: string } =
   const ctx = resolveContext();
   const instanceId = resolveInstanceId(ctx, opts.instance);
 
-  await apiRequest<void>(ctx, "DELETE", `/services/${instanceId}/variables/${key}`);
+  await apiRequest<void>(ctx, "DELETE", `/services/${instanceId}/variables/${encodeURIComponent(key)}`);
   console.log(`${key} removed.`);
 }
