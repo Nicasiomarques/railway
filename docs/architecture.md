@@ -56,22 +56,22 @@ PaaS platform inspired by Railway: `Connect → Configure → Deploy → Observe
 
 ## 3. Components
 
-| Component | Responsibility | Note |
-|---|---|---|
-| Web | Dashboard, canvas, logs, metrics | SPA (React) |
-| API | All exposed functionality; auth; validation | Same API for web, CLI and integrations |
-| Auth | Login, sessions, API tokens, RBAC | External provider in the MVP |
-| GitHub integration | Webhooks, checks, installation tokens | GitHub App, not OAuth App |
-| Detector | Analyzes repo and suggests a build/run plan | Pure function: file tree → plan + justifications |
-| Build orchestrator | Creates build jobs, cache, timeouts, cancellation | Cancels stale builds of the same service |
-| Builder | Runs build in sandbox and publishes image by digest | BuildKit rootless; Buildpacks for languages |
-| Deploy reconciler | Converts deployment into workload | Only component that writes to the runtime |
-| Runtime adapter | `createWorkload`, `setReplicas`, `getStatus`, `tailLogs` | Abstraction for swapping the backend |
-| Edge controller | Routing by host, certificates, domains | Consumes `domains` state |
-| Log pipeline | Collects stdout/stderr, indexes, real-time tail | Storage outside Postgres |
-| Metrics pipeline | CPU, memory, network, restarts | Aggregated per instance |
-| Usage aggregator | Samples → `usage_events` per project/service | Feeds future billing |
-| Preview janitor | TTL, sleep and preview cleanup | Periodic job |
+| Component          | Responsibility                                           | Note                                             |
+| ------------------ | -------------------------------------------------------- | ------------------------------------------------ |
+| Web                | Dashboard, canvas, logs, metrics                         | SPA (React)                                      |
+| API                | All exposed functionality; auth; validation              | Same API for web, CLI and integrations           |
+| Auth               | Login, sessions, API tokens, RBAC                        | External provider in the MVP                     |
+| GitHub integration | Webhooks, checks, installation tokens                    | GitHub App, not OAuth App                        |
+| Detector           | Analyzes repo and suggests a build/run plan              | Pure function: file tree → plan + justifications |
+| Build orchestrator | Creates build jobs, cache, timeouts, cancellation        | Cancels stale builds of the same service         |
+| Builder            | Runs build in sandbox and publishes image by digest      | BuildKit rootless; Buildpacks for languages      |
+| Deploy reconciler  | Converts deployment into workload                        | Only component that writes to the runtime        |
+| Runtime adapter    | `createWorkload`, `setReplicas`, `getStatus`, `tailLogs` | Abstraction for swapping the backend             |
+| Edge controller    | Routing by host, certificates, domains                   | Consumes `domains` state                         |
+| Log pipeline       | Collects stdout/stderr, indexes, real-time tail          | Storage outside Postgres                         |
+| Metrics pipeline   | CPU, memory, network, restarts                           | Aggregated per instance                          |
+| Usage aggregator   | Samples → `usage_events` per project/service             | Feeds future billing                             |
+| Preview janitor    | TTL, sleep and preview cleanup                           | Periodic job                                     |
 
 ---
 
@@ -106,6 +106,7 @@ Platform:
 ```
 
 **Modeling decisions**
+
 - `EnvSnapshot` immutable per deployment: rollback restores the snapshot, not the current state of the variables.
 - Inheritance resolved in the order service-instance → environment → project, recorded in the snapshot.
 - `version_no` sequential per ServiceInstance.
@@ -178,12 +179,12 @@ CreateEnvironment(prod)
 
 **Decided:** k3s behind a `RuntimeAdapter`. Keeps the Kubernetes API (namespaces, NetworkPolicy, ResourceQuota) with much less operational overhead than a managed cluster.
 
-| Option | Pros | Cons |
-|---|---|---|
-| **k3s (chosen)** | Full Kubernetes API in a single binary; no change to the isolation model | Operating the cluster yourself |
-| Managed Kubernetes | Ecosystem, network and volume control | Heavy operations |
-| Container serverless (Cloud Run / ECS Fargate) | Little ops; fast for web/worker | Limited stateful and private networking |
-| Nomad / Docker on VMs / custom Firecracker | Minimal ops or strong isolation | Smaller ecosystem or lots of platform work |
+| Option                                         | Pros                                                                     | Cons                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ |
+| **k3s (chosen)**                               | Full Kubernetes API in a single binary; no change to the isolation model | Operating the cluster yourself             |
+| Managed Kubernetes                             | Ecosystem, network and volume control                                    | Heavy operations                           |
+| Container serverless (Cloud Run / ECS Fargate) | Little ops; fast for web/worker                                          | Limited stateful and private networking    |
+| Nomad / Docker on VMs / custom Firecracker     | Minimal ops or strong isolation                                          | Smaller ecosystem or lots of platform work |
 
 Isolation of untrusted code (builds and workloads) still requires gVisor, Kata or a microVM, regardless of the orchestrator. See 7.2.
 
@@ -213,6 +214,7 @@ Isolation of untrusted code (builds and workloads) still requires gVisor, Kata o
 - Installation tokens generated on demand, never persisted.
 
 **Branch → environment mapping** (ordered, configurable globs):
+
 ```text
 main        → Production
 develop     → Staging
@@ -228,6 +230,7 @@ feature/*   → Preview (phase 2)
 ## 9. Observability
 
 **Logs**
+
 - Per-node agent (Vector or Fluent Bit) reads stdout/stderr and adds labels `project`, `env`, `instance`, `deployment_id`.
 - Storage: Loki or VictoriaLogs in the MVP; ClickHouse if search needs demand it.
 - Build and runtime on the same pipeline, distinguished by `stream=build|runtime`.
@@ -235,6 +238,7 @@ feature/*   → Preview (phase 2)
 - Retention by plan; archiving to object storage.
 
 **Metrics**
+
 - CPU, memory, network and disk from kubelet/cAdvisor (or equivalent) → Prometheus/VictoriaMetrics.
 - Restarts and uptime derived from runtime events.
 - Application metrics via `OTEL_EXPORTER_OTLP_ENDPOINT` injected as a variable.
@@ -276,6 +280,7 @@ GET    /v1/operations/{id}
 ```
 
 **Conventions**
+
 - Actions as `:verb` when they are not CRUD.
 - `Idempotency-Key` on POSTs that create resources or trigger jobs.
 - Long-running operations return `202` with `operation_id`.
@@ -321,20 +326,20 @@ Sidebar
 
 ## 12. Technical risks
 
-| # | Risk | Impact | Mitigation |
-|---|---|---|---|
-| 1 | Build code escaping the sandbox | Critical | microVM for builds, restricted egress, dedicated nodes, no privileges |
-| 2 | Secrets leakage | Critical | Masking, envelope encryption, fork blocking |
-| 3 | Wrong runtime chosen | High | `RuntimeAdapter`; spike with A and B |
-| 4 | Egress and log costs above revenue | High | Quotas, limited retention, usage from day 1, sleep |
-| 5 | Wrong service vs. instance model | High | `ServiceInstance` from the start |
-| 6 | Desired state diverging from actual | High | Idempotent reconciler; orphan GC |
-| 7 | Let's Encrypt/DNS rate limit | Medium | Wildcard, certificate reuse, issuance queue |
-| 8 | GitHub rate limit | Medium | Per-installation tokens, cache, webhooks |
-| 9 | Insufficient Postgres/Redis backup | Critical | Automated backup, restore testing, UI warnings |
-| 10 | Rollback broken by migration or env | High | Immutable snapshot; migration warning; pre-deploy command |
-| 11 | Wrong detection | Medium | Visible justification, override, test corpus |
-| 12 | Abuse (mining, spam) | High | Quotas, account verification, pattern detection |
-| 13 | Log volume overwhelming the pipeline | High | Per-instance rate limit, sampling at peak |
-| 14 | LGPD and data residency | High | Explicit region; DPA; minimal personal data in logs |
-| 15 | Canvas delaying the product | Medium | Visualization first; editor later |
+| #   | Risk                                 | Impact   | Mitigation                                                            |
+| --- | ------------------------------------ | -------- | --------------------------------------------------------------------- |
+| 1   | Build code escaping the sandbox      | Critical | microVM for builds, restricted egress, dedicated nodes, no privileges |
+| 2   | Secrets leakage                      | Critical | Masking, envelope encryption, fork blocking                           |
+| 3   | Wrong runtime chosen                 | High     | `RuntimeAdapter`; spike with A and B                                  |
+| 4   | Egress and log costs above revenue   | High     | Quotas, limited retention, usage from day 1, sleep                    |
+| 5   | Wrong service vs. instance model     | High     | `ServiceInstance` from the start                                      |
+| 6   | Desired state diverging from actual  | High     | Idempotent reconciler; orphan GC                                      |
+| 7   | Let's Encrypt/DNS rate limit         | Medium   | Wildcard, certificate reuse, issuance queue                           |
+| 8   | GitHub rate limit                    | Medium   | Per-installation tokens, cache, webhooks                              |
+| 9   | Insufficient Postgres/Redis backup   | Critical | Automated backup, restore testing, UI warnings                        |
+| 10  | Rollback broken by migration or env  | High     | Immutable snapshot; migration warning; pre-deploy command             |
+| 11  | Wrong detection                      | Medium   | Visible justification, override, test corpus                          |
+| 12  | Abuse (mining, spam)                 | High     | Quotas, account verification, pattern detection                       |
+| 13  | Log volume overwhelming the pipeline | High     | Per-instance rate limit, sampling at peak                             |
+| 14  | LGPD and data residency              | High     | Explicit region; DPA; minimal personal data in logs                   |
+| 15  | Canvas delaying the product          | Medium   | Visualization first; editor later                                     |

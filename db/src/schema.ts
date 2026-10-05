@@ -1,3 +1,4 @@
+import { DEPLOYMENT_STATUSES } from "@railway-like/shared";
 import {
   bigint,
   boolean,
@@ -12,21 +13,35 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { DEPLOYMENT_STATUSES } from "@railway-like/shared";
 
 const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 };
 
 const softDelete = {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 };
 
-export const membershipRole = pgEnum("membership_role", ["owner", "admin", "member", "viewer"]);
+export const membershipRole = pgEnum("membership_role", [
+  "owner",
+  "admin",
+  "member",
+  "viewer",
+]);
 // "ci": ephemeral environment created directly for a CI job (roadmap.md Phase 5), as opposed to
 // "preview", which is only ever created by the GitHub PR webhook flow (api/src/routes/github.ts).
-export const environmentType = pgEnum("environment_type", ["production", "staging", "preview", "custom", "ci"]);
+export const environmentType = pgEnum("environment_type", [
+  "production",
+  "staging",
+  "preview",
+  "custom",
+  "ci",
+]);
 export const serviceSource = pgEnum("service_source", [
   "github_repo",
   "image",
@@ -35,18 +50,32 @@ export const serviceSource = pgEnum("service_source", [
   "redis_template",
   "minio_template",
 ]);
-export const deploymentStatus = pgEnum("deployment_status", DEPLOYMENT_STATUSES);
+export const deploymentStatus = pgEnum(
+  "deployment_status",
+  DEPLOYMENT_STATUSES,
+);
 // "cron": created by the cron scheduler (workers/src/cron) when a cron service's schedule fires.
-export const deploymentTrigger = pgEnum("deployment_trigger", ["push", "manual", "rollback", "redeploy", "cron"]);
-export const domainType = pgEnum("domain_type", ["auto", "custom"]);
-export const variableScope = pgEnum("variable_scope", ["project", "environment", "service_instance"]);
-export const environmentProvisioningStatus = pgEnum("environment_provisioning_status", [
-  "pending",
-  "provisioning",
-  "ready",
-  "failed",
+export const deploymentTrigger = pgEnum("deployment_trigger", [
+  "push",
+  "manual",
+  "rollback",
+  "redeploy",
+  "cron",
 ]);
-export const subscriptionStatus = pgEnum("subscription_status", ["active", "canceled"]);
+export const domainType = pgEnum("domain_type", ["auto", "custom"]);
+export const variableScope = pgEnum("variable_scope", [
+  "project",
+  "environment",
+  "service_instance",
+]);
+export const environmentProvisioningStatus = pgEnum(
+  "environment_provisioning_status",
+  ["pending", "provisioning", "ready", "failed"],
+);
+export const subscriptionStatus = pgEnum("subscription_status", [
+  "active",
+  "canceled",
+]);
 // "draft": created and line items populated by the billing worker; "finalized": closed, amounts
 // immutable from this point (architecture.md's usage_events are append-only, so a finalized invoice
 // is what makes a historical period's cost stable even as new usage_events keep arriving for the
@@ -66,7 +95,10 @@ export const users = pgTable(
     passwordHash: text("password_hash"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("users_external_id_idx").on(t.externalId), uniqueIndex("users_email_idx").on(t.email)],
+  (t) => [
+    uniqueIndex("users_external_id_idx").on(t.externalId),
+    uniqueIndex("users_email_idx").on(t.email),
+  ],
 );
 
 export const organizations = pgTable(
@@ -131,7 +163,10 @@ export const projects = pgTable(
     slug: text("slug").notNull(),
     // Node positions for the service canvas, keyed by serviceId: { [serviceId]: { x, y } }.
     // Written by the frontend (ServiceCanvas.tsx) via PATCH /projects/:projectId/canvas-layout.
-    canvasLayout: jsonb("canvas_layout").$type<Record<string, { x: number; y: number }>>().notNull().default({}),
+    canvasLayout: jsonb("canvas_layout")
+      .$type<Record<string, { x: number; y: number }>>()
+      .notNull()
+      .default({}),
     ...timestamps,
     ...softDelete,
   },
@@ -152,8 +187,13 @@ export const environments = pgTable(
     ttlAt: timestamp("ttl_at", { withTimezone: true }),
     sleepPolicy: jsonb("sleep_policy"),
     // Provisioning saga (architecture.md §6): each completed step is recorded to resume from the point of failure.
-    provisioningStatus: environmentProvisioningStatus("provisioning_status").notNull().default("pending"),
-    provisioningSteps: jsonb("provisioning_steps").$type<string[]>().notNull().default([]),
+    provisioningStatus: environmentProvisioningStatus("provisioning_status")
+      .notNull()
+      .default("pending"),
+    provisioningSteps: jsonb("provisioning_steps")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     provisioningError: text("provisioning_error"),
     ...timestamps,
     ...softDelete,
@@ -214,7 +254,12 @@ export const serviceInstances = pgTable(
     ...timestamps,
     ...softDelete,
   },
-  (t) => [uniqueIndex("service_instances_svc_env_idx").on(t.serviceId, t.environmentId)],
+  (t) => [
+    uniqueIndex("service_instances_svc_env_idx").on(
+      t.serviceId,
+      t.environmentId,
+    ),
+  ],
 );
 
 // Immutable snapshot of variables resolved at deploy time.
@@ -225,7 +270,9 @@ export const envSnapshots = pgTable("env_snapshots", {
     .references(() => serviceInstances.id),
   // Secret values are encrypted (envelope); never in plain text.
   payloadEnc: text("payload_enc").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const deployments = pgTable(
@@ -248,7 +295,10 @@ export const deployments = pgTable(
     ...timestamps,
   },
   (t) => [
-    uniqueIndex("deployments_instance_version_idx").on(t.serviceInstanceId, t.versionNo),
+    uniqueIndex("deployments_instance_version_idx").on(
+      t.serviceInstanceId,
+      t.versionNo,
+    ),
     index("deployments_instance_status_idx").on(t.serviceInstanceId, t.status),
   ],
 );
@@ -256,14 +306,18 @@ export const deployments = pgTable(
 export const deploymentEvents = pgTable(
   "deployment_events",
   {
-    id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    id: bigint("id", { mode: "bigint" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
     deploymentId: uuid("deployment_id")
       .notNull()
       .references(() => deployments.id),
     fromStatus: deploymentStatus("from_status"),
     toStatus: deploymentStatus("to_status").notNull(),
     reason: text("reason"),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index("deployment_events_deployment_idx").on(t.deploymentId)],
 );
@@ -287,7 +341,9 @@ export const buildLogs = pgTable("build_logs", {
     .primaryKey()
     .references(() => deployments.id),
   content: text("content").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 export const variables = pgTable(
@@ -297,7 +353,9 @@ export const variables = pgTable(
     scope: variableScope("scope").notNull(),
     projectId: uuid("project_id").references(() => projects.id),
     environmentId: uuid("environment_id").references(() => environments.id),
-    serviceInstanceId: uuid("service_instance_id").references(() => serviceInstances.id),
+    serviceInstanceId: uuid("service_instance_id").references(
+      () => serviceInstances.id,
+    ),
     key: text("key").notNull(),
     valueEnc: text("value_enc").notNull(),
     isSecret: boolean("is_secret").notNull().default(false),
@@ -391,7 +449,9 @@ export const webhookDeliveries = pgTable(
     responseStatus: integer("response_status"),
     attempt: integer("attempt").notNull().default(1),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index("webhook_deliveries_subscription_idx").on(t.subscriptionId)],
 );
@@ -423,7 +483,12 @@ export const githubRepoLinks = pgTable(
     ...timestamps,
   },
   // A repo (within an installation) links to a single project; the push webhook resolves through here.
-  (t) => [uniqueIndex("github_repo_links_installation_repo_idx").on(t.installationId, t.repoId)],
+  (t) => [
+    uniqueIndex("github_repo_links_installation_repo_idx").on(
+      t.installationId,
+      t.repoId,
+    ),
+  ],
 );
 
 // Idempotency for GitHub webhooks by X-GitHub-Delivery. Doesn't fit `idempotency_keys`
@@ -431,18 +496,24 @@ export const githubRepoLinks = pgTable(
 export const githubWebhookDeliveries = pgTable("github_webhook_deliveries", {
   deliveryId: text("delivery_id").primaryKey(),
   event: text("event").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
 });
 
 // Append-only: no updatedAt and intentionally no soft delete.
 export const usageEvents = pgTable(
   "usage_events",
   {
-    id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    id: bigint("id", { mode: "bigint" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id),
-    serviceInstanceId: uuid("service_instance_id").references(() => serviceInstances.id),
+    serviceInstanceId: uuid("service_instance_id").references(
+      () => serviceInstances.id,
+    ),
     metric: text("metric").notNull(),
     value: integer("value").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
@@ -462,8 +533,12 @@ export const plans = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     slug: text("slug").notNull(),
     name: text("name").notNull(),
-    pricePerReplicaMinuteCents: integer("price_per_replica_minute_cents").notNull(),
-    includedReplicaMinutes: integer("included_replica_minutes").notNull().default(0),
+    pricePerReplicaMinuteCents: integer(
+      "price_per_replica_minute_cents",
+    ).notNull(),
+    includedReplicaMinutes: integer("included_replica_minutes")
+      .notNull()
+      .default(0),
     ...timestamps,
   },
   (t) => [uniqueIndex("plans_slug_idx").on(t.slug)],
@@ -508,7 +583,11 @@ export const invoices = pgTable(
   (t) => [
     // The billing worker re-running for a period it already closed must update that invoice, not
     // duplicate it (mirrors reconcileJobId/runBackupJobId: one unit of work, one stable identity).
-    uniqueIndex("invoices_org_period_idx").on(t.organizationId, t.periodStart, t.periodEnd),
+    uniqueIndex("invoices_org_period_idx").on(
+      t.organizationId,
+      t.periodStart,
+      t.periodEnd,
+    ),
     index("invoices_org_idx").on(t.organizationId),
   ],
 );
@@ -527,7 +606,9 @@ export const invoiceLineItems = pgTable(
     description: text("description").notNull(),
     replicaMinutes: integer("replica_minutes").notNull(),
     amountCents: integer("amount_cents").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index("invoice_line_items_invoice_idx").on(t.invoiceId)],
 );
@@ -536,7 +617,9 @@ export const invoiceLineItems = pgTable(
 export const auditLogs = pgTable(
   "audit_logs",
   {
-    id: bigint("id", { mode: "bigint" }).primaryKey().generatedAlwaysAsIdentity(),
+    id: bigint("id", { mode: "bigint" })
+      .primaryKey()
+      .generatedAlwaysAsIdentity(),
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => organizations.id),
@@ -544,7 +627,9 @@ export const auditLogs = pgTable(
     action: text("action").notNull(),
     target: text("target"),
     metadata: jsonb("metadata"),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [index("audit_logs_org_time_idx").on(t.organizationId, t.occurredAt)],
 );
@@ -581,7 +666,9 @@ export const idempotencyKeys = pgTable(
     requestHash: text("request_hash").notNull(),
     responseStatus: integer("response_status").notNull(),
     responseBody: jsonb("response_body").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [uniqueIndex("idempotency_user_key_idx").on(t.userId, t.key)],
 );
