@@ -15,7 +15,7 @@ export async function ciEnvCreateCommand(
   const env = await apiRequest<Environment>(ctx, "POST", `/projects/${projectId}/environments/ci`, {
     json: { name: opts.name, ttlSeconds },
   });
-  // Printed on its own line, first: a CI job scripts off this (e.g. `ID=$(railway-like ci-env create | tail -1)`).
+  // Printed on its own line, first: a CI job scripts off this (e.g. `ID=$(railway-like ci-env create | head -1)`).
   console.log(env.id);
   console.log(`Environment "${env.name}" created (${env.id}), torn down automatically at ${env.ttlAt}.`);
 }

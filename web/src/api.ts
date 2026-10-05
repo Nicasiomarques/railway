@@ -35,6 +35,8 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     const problem = await res.json().catch(() => ({}));
     throw new ApiProblem(res.status, problem.code ?? "error", problem.detail ?? res.statusText);
   }
+  // DELETE endpoints (and any other 204) return an empty body - res.json() throws on that.
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 

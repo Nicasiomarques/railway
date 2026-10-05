@@ -105,8 +105,8 @@ export function buildApp(
       await v1.register(variableRoutes, { db, keyring: opts.keyring });
       await v1.register(domainRoutes, { db, baseDomain: opts.baseDomain, queue: opts.domainQueue });
       await v1.register(volumeRoutes, { db, backupQueue: opts.backupQueue });
-      await v1.register(webhookRoutes, { db });
-      await v1.register(extensionRoutes, { db });
+      await v1.register(webhookRoutes, { db, keyring: opts.keyring });
+      await v1.register(extensionRoutes, { db, keyring: opts.keyring });
       await v1.register(deploymentRoutes, {
         db,
         keyring: opts.keyring,

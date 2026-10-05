@@ -228,6 +228,7 @@ export function ProjectDetail({
 
       {open && openInstance && openService && (
         <ServiceInspector
+          key={open.instanceId}
           serviceId={open.serviceId}
           instanceId={open.instanceId}
           serviceName={open.name}

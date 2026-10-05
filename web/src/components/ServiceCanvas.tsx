@@ -107,6 +107,9 @@ export function ServiceCanvas({
   function onNodePointerMove(e: React.PointerEvent<HTMLDivElement>) {
     const d = drag.current;
     if (!d) return;
+    // Read-only viewers can still click a node to open it, but dragging is a layout edit, and
+    // layout changes are silently dropped for them anyway (scheduleSave below early-returns).
+    if (!canWrite) return;
     const dx = e.clientX - d.startX;
     const dy = e.clientY - d.startY;
     if (!d.moved && Math.hypot(dx, dy) > CLICK_THRESHOLD_PX) {
@@ -183,7 +186,7 @@ export function ServiceCanvas({
         <span className="muted">
           {canWrite
             ? "Clique num node para ver detalhes. Arraste para reorganizar, ou o ponto à direita para conectar."
-            : "Clique num node para ver detalhes. Arraste para reorganizar."}
+            : "Clique num node para ver detalhes."}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {saving && (
@@ -191,9 +194,11 @@ export function ServiceCanvas({
               <span className="spinner" /> Saving…
             </span>
           )}
-          <button className="ghost" onClick={resetLayout}>
-            Rearrange
-          </button>
+          {canWrite && (
+            <button className="ghost" onClick={resetLayout}>
+              Rearrange
+            </button>
+          )}
         </span>
       </div>
 
