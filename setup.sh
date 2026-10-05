@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # railway-like: One-command bootstrap & dev environment
-# Usage: ./setup.sh [--full] [--no-infra] [--help]
+# Usage: ./setup.sh [--full] [--no-infra] [--background] [--help]
 #   --full      : Also install gVisor, build images, run tests
 #   --no-infra  : Skip infra setup (Postgres, Redis, k3d), only install deps & start apps
+#   --background: Start services and exit immediately (don't tail logs)
 #   --help      : Show this help
 
 set -euo pipefail
@@ -18,6 +19,7 @@ PG_TEST_DB="railway_like_test"
 PG_WORKERS_TEST_DB="railway_like_workers_test"
 FULL_MODE=false
 NO_INFRA=false
+BACKGROUND=false
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
 log()   { echo -e "\033[1;34m[INFO]\033[0m  $*"; }
@@ -33,8 +35,9 @@ for arg in "$@"; do
   case $arg in
     --full)     FULL_MODE=true ;;
     --no-infra) NO_INFRA=true ;;
+    --background) BACKGROUND=true ;;
     --help|-h)
-      grep '^# Usage:' "$0" | cut -c4-
+      grep '^# Usage:' "$0" | cut -c3-
       exit 0
       ;;
     *) die "Unknown argument: $arg (use --help)" ;;
@@ -110,8 +113,11 @@ if [[ "$NO_INFRA" == false ]]; then
       brew services start postgresql@16 2>/dev/null || brew services start postgresql 2>/dev/null
       sleep 3
     fi
+    # Create railway user with password
+    createuser -s railway 2>/dev/null || true
+    psql postgres -c "ALTER USER railway WITH PASSWORD 'railway';" 2>/dev/null || true
     for db in "$PG_DB" "$PG_TEST_DB" "$PG_WORKERS_TEST_DB"; do
-      createdb "$db" 2>/dev/null || true
+      createdb "$db" -O railway 2>/dev/null || true
     done
     ok "PostgreSQL databases ready"
   else
@@ -246,12 +252,27 @@ start_service "api" "api" "pnpm dev"
 # Web
 start_service "web" "web" "pnpm dev"
 
+# Build egress allow-list — derive IPs from running infra (see infra/README.md "Build egress")
+REGISTRY_IP=$(docker inspect "k3d-$REGISTRY_NAME" --format "{{(index .NetworkSettings.Networks \"k3d-$CLUSTER_NAME\").IPAddress}}" 2>/dev/null || true)
+HOST_GATEWAY_IP=$(docker network inspect "k3d-$CLUSTER_NAME" --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || true)
+if [[ -n "$REGISTRY_IP" && -n "$HOST_GATEWAY_IP" ]]; then
+  BUILD_EGRESS_ALLOW="${REGISTRY_IP}/32:5000,${HOST_GATEWAY_IP}/32:8189"
+  # Docker Desktop reaches the host at 192.168.65.254 (host.docker.internal), not only via the gateway
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    BUILD_EGRESS_ALLOW="$BUILD_EGRESS_ALLOW,192.168.65.254/32:8189"
+  fi
+  ok "Build egress allow-list: $BUILD_EGRESS_ALLOW"
+else
+  warn "Could not derive registry/host IPs; set BUILD_EGRESS_ALLOW manually (infra/README.md 'Build egress')"
+  BUILD_EGRESS_ALLOW=""
+fi
+
 # Workers (needs env vars)
 cat > "/tmp/workers-env.sh" <<EOF
 export RECONCILER_RUNTIME=k8s
 export K8S_CONTEXT=$CTX
 export BUILD_REGISTRY=k3d-$REGISTRY_NAME:5000
-export BUILD_EGRESS_ALLOW="172.24.0.2/32:5000,192.168.65.254/32:8189"
+export BUILD_EGRESS_ALLOW="$BUILD_EGRESS_ALLOW"
 export METRICS_PORT=9102
 # Database for workers
 export DATABASE_URL=postgres://railway:railway@localhost:5432/$PG_DB
@@ -300,7 +321,7 @@ echo "    • Registry:   localhost:$REGISTRY_PORT"
 echo
 echo "  Useful commands:"
 echo "    • View logs:    tail -f /tmp/railway-*.log  (not implemented, see PIDs below)"
-echo "    • Stop all:     ./setup.sh --stop"
+echo "    • Stop all:     ./stop.sh"
 echo "    • Run tests:    pnpm test"
 echo "    • Typecheck:    pnpm typecheck"
 echo "    • Build all:    pnpm build"
@@ -315,7 +336,7 @@ echo "  To stop everything, press Ctrl+C or run: kill \$(cat /tmp/railway-*.pid 
 echo
 
 # Keep script alive to show logs (optional)
-if [[ "${1:-}" != "--background" ]]; then
+if [[ "$BACKGROUND" == false ]]; then
   log "Tailing API logs (Ctrl+C to stop all)..."
   wait
 fi

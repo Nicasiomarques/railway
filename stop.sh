@@ -29,7 +29,7 @@ for arg in "$@"; do
     --clean)      CLEAN=true ;;
     --full-clean) CLEAN=true; FULL_CLEAN=true ;;
     --help|-h)
-      grep '^# Usage:' "$0" | cut -c4-
+      grep '^# Usage:' "$0" | cut -c3-
       exit 0
       ;;
     *) err "Unknown argument: $arg (use --help)"; exit 1 ;;
@@ -39,27 +39,38 @@ done
 # ─── 1. Kill dev processes (API, Web, Workers) ───────────────────────────
 log "Stopping development processes..."
 
+# Print a PID and all of its descendants (subshell -> pnpm -> node/vite/tsx).
+# Killing only the subshell from the PID file leaves its children running.
+list_tree() {
+  local pid=$1 child
+  echo "$pid"
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    list_tree "$child"
+  done
+}
+
 for name in api web workers; do
   pid_file="/tmp/railway-$name.pid"
   if [[ -f "$pid_file" ]]; then
     pid=$(cat "$pid_file" 2>/dev/null || echo "")
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       log "Stopping $name (PID: $pid)..."
-      kill "$pid" 2>/dev/null || true
+      tree=$(list_tree "$pid")
+      # TERM the whole tree, then KILL whatever survived
+      # shellcheck disable=SC2086
+      kill $tree 2>/dev/null || true
       sleep 1
-      kill -9 "$pid" 2>/dev/null || true
+      # shellcheck disable=SC2086
+      kill -9 $tree 2>/dev/null || true
       ok "$name stopped"
     fi
     rm -f "$pid_file"
   fi
 done
 
-# Fallback: kill by pattern (covers orphaned processes)
-pkill -f "railway-like" 2>/dev/null || true
-pkill -f "tsx watch.*api" 2>/dev/null || true
-pkill -f "vite.*web" 2>/dev/null || true
-pkill -f "node.*workers" 2>/dev/null || true
-pkill -f "pnpm.*dev" 2>/dev/null || true
+# Fallback: orphaned processes from THIS project only (argv contains <root>/...node_modules/).
+# Never use generic patterns like "pnpm.*dev" here — they kill other projects too.
+pkill -f "$ROOT/.*node_modules/" 2>/dev/null || true
 
 # Clean temp files created by setup.sh
 rm -f /tmp/workers-env.sh
@@ -178,12 +189,6 @@ if [[ "$FULL_CLEAN" == true ]]; then
   rm -rf db/node_modules db/dist
   rm -rf shared/node_modules shared/dist
   ok "Build artifacts removed"
-
-  # Remove k3d data (if cluster was deleted, this is mostly done)
-  if [[ "$OSTYPE" == "linux"* ]]; then
-    # k3d stores data in /var/lib/rancher/k3s or ~/.k3d
-    rm -rf ~/.k3d 2>/dev/null || true
-  fi
 
   # Remove generated .env (optional - keep for convenience)
   # rm -f "$ROOT/api/.env"
