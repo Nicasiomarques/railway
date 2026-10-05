@@ -141,6 +141,10 @@ export function NewServiceWizard({
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState<CreatedService | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Generated once per submission attempt (goToReview) and reused across "Try again" clicks, so a
+  // retry after a dropped response (e.g. the create actually succeeded but the client timed out)
+  // dedupes against the original request instead of creating a second service.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   async function submitService() {
     if (!project) return;
@@ -151,7 +155,7 @@ export function NewServiceWizard({
       if (source === "github_repo") body.repoUrl = repoUrl.trim();
       const result = await api<CreatedService>(`/projects/${project.id}/services`, {
         method: "POST",
-        headers: { "idempotency-key": crypto.randomUUID() },
+        headers: { "idempotency-key": idempotencyKey },
         json: body,
       });
       setCreated(result);
@@ -168,6 +172,7 @@ export function NewServiceWizard({
     setStep(5);
     setCreated(null);
     setSubmitError(null);
+    setIdempotencyKey(crypto.randomUUID());
     submitService();
   }
 

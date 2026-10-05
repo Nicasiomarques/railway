@@ -153,7 +153,7 @@ const billingWorker = createBillingWorker(connection, {
 // the default when `transport` is omitted). The API's queue.ts (createWebhookQueue) does the
 // subscription matching and enqueues one deliver-webhook job per match; this worker just sends it.
 const webhookWorker = createWebhookWorker(connection, {
-  store: new PostgresWebhookStore(db),
+  store: new PostgresWebhookStore(db, keyring),
 });
 observeWorker(webhookWorker, WEBHOOKS_QUEUE);
 

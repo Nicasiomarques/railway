@@ -113,7 +113,8 @@ export const volumeRoutes: FastifyPluginAsync<{ db: Db; backupQueue?: BackupQueu
 
       const { organizationId } = await requireInstanceAccess(db, userId, volume.serviceInstanceId, { write: true }).catch((err) => {
         if (err instanceof ApiError && err.status === 403) throw err;
-        throw new ApiError(404, "volume_not_found", "Volume not found.");
+        if (err instanceof ApiError && err.status === 404) throw new ApiError(404, "volume_not_found", "Volume not found.");
+        throw err;
       });
 
       await db.insert(auditLogs).values({
@@ -165,7 +166,8 @@ export const volumeRoutes: FastifyPluginAsync<{ db: Db; backupQueue?: BackupQueu
 
       const { organizationId } = await requireInstanceAccess(db, userId, volume.serviceInstanceId, { write: true }).catch((err) => {
         if (err instanceof ApiError && err.status === 403) throw err;
-        throw new ApiError(404, "volume_not_found", "Volume not found.");
+        if (err instanceof ApiError && err.status === 404) throw new ApiError(404, "volume_not_found", "Volume not found.");
+        throw err;
       });
 
       // Audited unconditionally, even if the enqueue below fails: "someone asked to restore this

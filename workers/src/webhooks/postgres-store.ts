@@ -1,15 +1,26 @@
 import { eq } from "drizzle-orm";
-import { webhookDeliveries, webhookSubscriptions, type Db } from "@railway-like/db";
+import { decryptValue, webhookDeliveries, webhookSubscriptions, type Db, type Keyring } from "@railway-like/db";
 import type { RecordDeliveryInput, WebhookDeliveryStore, WebhookSubscriptionRecord } from "./store.js";
+
+// Ties the ciphertext to the specific subscription, matching api/src/routes/webhooks.ts's contextFor.
+const contextFor = (id: string) => `webhook_subscription:${id}`;
 
 // Postgres store for the webhooks worker.
 export class PostgresWebhookStore implements WebhookDeliveryStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly keyring: Keyring,
+  ) {}
 
   async getSubscription(id: string): Promise<WebhookSubscriptionRecord | null> {
     const [row] = await this.db.select().from(webhookSubscriptions).where(eq(webhookSubscriptions.id, id));
     if (!row) return null;
-    return { id: row.id, url: row.url, secret: row.secret, isActive: row.isActive };
+    return {
+      id: row.id,
+      url: row.url,
+      secret: decryptValue(this.keyring, row.secret, contextFor(row.id)),
+      isActive: row.isActive,
+    };
   }
 
   async recordDelivery(input: RecordDeliveryInput): Promise<void> {

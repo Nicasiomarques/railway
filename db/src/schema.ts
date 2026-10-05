@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   index,
@@ -147,7 +148,7 @@ export const environments = pgTable(
       .references(() => projects.id),
     name: text("name").notNull(),
     type: environmentType("type").notNull(),
-    parentEnvironmentId: uuid("parent_environment_id"),
+    parentEnvironmentId: uuid("parent_environment_id").references((): AnyPgColumn => environments.id),
     branchRule: text("branch_rule"),
     ttlAt: timestamp("ttl_at", { withTimezone: true }),
     sleepPolicy: jsonb("sleep_policy"),
@@ -214,19 +215,26 @@ export const serviceInstances = pgTable(
     ...timestamps,
     ...softDelete,
   },
-  (t) => [uniqueIndex("service_instances_svc_env_idx").on(t.serviceId, t.environmentId)],
+  (t) => [
+    uniqueIndex("service_instances_svc_env_idx").on(t.serviceId, t.environmentId),
+    index("service_instances_environment_idx").on(t.environmentId),
+  ],
 );
 
 // Immutable snapshot of variables resolved at deploy time.
-export const envSnapshots = pgTable("env_snapshots", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  serviceInstanceId: uuid("service_instance_id")
-    .notNull()
-    .references(() => serviceInstances.id),
-  // Secret values are encrypted (envelope); never in plain text.
-  payloadEnc: text("payload_enc").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const envSnapshots = pgTable(
+  "env_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    serviceInstanceId: uuid("service_instance_id")
+      .notNull()
+      .references(() => serviceInstances.id),
+    // Secret values are encrypted (envelope); never in plain text.
+    payloadEnc: text("payload_enc").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("env_snapshots_instance_idx").on(t.serviceInstanceId)],
+);
 
 export const deployments = pgTable(
   "deployments",
@@ -244,7 +252,7 @@ export const deployments = pgTable(
     imageDigest: text("image_digest"),
     envSnapshotId: uuid("env_snapshot_id").references(() => envSnapshots.id),
     // Rollback points to the source deployment, without a rebuild.
-    rollbackOfId: uuid("rollback_of_id"),
+    rollbackOfId: uuid("rollback_of_id").references((): AnyPgColumn => deployments.id),
     ...timestamps,
   },
   (t) => [
@@ -308,6 +316,8 @@ export const variables = pgTable(
     index("variables_scope_key_idx").on(t.scope, t.key),
     // NULLs don't collide: rows from other scopes don't affect this uniqueness.
     uniqueIndex("variables_instance_key_idx").on(t.serviceInstanceId, t.key),
+    index("variables_project_idx").on(t.projectId),
+    index("variables_environment_idx").on(t.environmentId),
   ],
 );
 
@@ -323,7 +333,7 @@ export const domains = pgTable(
     tlsState: text("tls_state").notNull().default("pending"),
     ...timestamps,
   },
-  (t) => [uniqueIndex("domains_hostname_idx").on(t.hostname)],
+  (t) => [uniqueIndex("domains_hostname_idx").on(t.hostname), index("domains_instance_idx").on(t.serviceInstanceId)],
 );
 
 // Volumes attach to a service instance (architecture.md §6: stateful workloads get a PVC + a
@@ -362,8 +372,10 @@ export const webhookSubscriptions = pgTable(
     name: text("name"),
     description: text("description"),
     url: text("url").notNull(),
-    // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts);
-    // never returned by the API once set (api/src/routes/webhooks.ts).
+    // HMAC-SHA256 signing secret for outbound deliveries (workers/src/webhooks/adapter.ts),
+    // envelope-encrypted the same way variables.valueEnc is (api/src/crypto/envelope.ts) --
+    // the column holds ciphertext, never plaintext, as of this migration. Never returned by
+    // the API once set (api/src/routes/webhooks.ts).
     secret: text("secret").notNull(),
     // Event types this subscription wants, e.g. ["deployment.status_changed"]. Not an enum: new
     // event types are expected to be added later without a migration.
@@ -407,7 +419,10 @@ export const connections = pgTable(
       .references(() => serviceInstances.id),
     ...timestamps,
   },
-  (t) => [primaryKey({ columns: [t.fromInstanceId, t.toInstanceId] })],
+  (t) => [
+    primaryKey({ columns: [t.fromInstanceId, t.toInstanceId] }),
+    index("connections_to_instance_idx").on(t.toInstanceId),
+  ],
 );
 
 export const githubRepoLinks = pgTable(
@@ -566,7 +581,11 @@ export const apiTokens = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     ...timestamps,
   },
-  (t) => [uniqueIndex("api_tokens_hash_idx").on(t.tokenHash)],
+  (t) => [
+    uniqueIndex("api_tokens_hash_idx").on(t.tokenHash),
+    index("api_tokens_organization_idx").on(t.organizationId),
+    index("api_tokens_user_idx").on(t.userId),
+  ],
 );
 
 // Responses for POSTs with an Idempotency-Key. Only recorded when the operation completes successfully.

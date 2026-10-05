@@ -407,8 +407,12 @@ export const deploymentRoutes: FastifyPluginAsync<{
       // No access and nonexistent return the same error: it doesn't reveal that the id exists.
       const notFound = () => new ApiError(404, "deployment_not_found", "Deployment not found.");
       if (!dep) throw notFound();
-      await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch(() => {
-        throw notFound();
+      await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch((err) => {
+        // Both "no access" (403) and "instance gone" (404) collapse into the same
+        // deployment_not_found, so a caller can't tell those apart from a bare nonexistent id.
+        // An unexpected (non-ApiError) failure is NOT masked here - it surfaces as a 500 instead.
+        if (err instanceof ApiError) throw notFound();
+        throw err;
       });
 
       const events = await db
@@ -599,8 +603,12 @@ export const deploymentRoutes: FastifyPluginAsync<{
         .innerJoin(serviceInstances, eq(serviceInstances.id, deployments.serviceInstanceId))
         .where(eq(deployments.id, deploymentId));
       if (!dep) throw notFound();
-      await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch(() => {
-        throw notFound();
+      await requireInstanceAccess(db, request.auth!.userId, dep.serviceInstanceId).catch((err) => {
+        // Both "no access" (403) and "instance gone" (404) collapse into the same
+        // deployment_not_found, so a caller can't tell those apart from a bare nonexistent id.
+        // An unexpected (non-ApiError) failure is NOT masked here - it surfaces as a 500 instead.
+        if (err instanceof ApiError) throw notFound();
+        throw err;
       });
 
       if (!query.stream) {

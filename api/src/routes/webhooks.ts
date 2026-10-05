@@ -1,11 +1,16 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { WebhookSubscriptionSchema, listOf } from "../openapi/schemas.js";
 import { requireMembership } from "../access.js";
 import { ApiError } from "../errors.js";
+import { encryptValue, type Keyring } from "../crypto/envelope.js";
 import type { Db } from "../db/client.js";
 import { auditLogs, projects, webhookSubscriptions } from "../db/schema.js";
+
+// Ties the ciphertext to the specific subscription: copying it to another row won't decrypt.
+const contextFor = (id: string) => `webhook_subscription:${id}`;
 
 // NOTE on naming: this is for OUTBOUND webhooks — subscriptions this platform calls out to when
 // something happens. It's the inverse of routes/github.ts, which RECEIVES inbound webhooks from
@@ -53,7 +58,7 @@ async function requireWriteMembership(db: Db, userId: string, organizationId: st
   }
 }
 
-export const webhookRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db }) => {
+export const webhookRoutes: FastifyPluginAsync<{ db: Db; keyring: Keyring }> = async (app, { db, keyring }) => {
   app.post(
     "/organizations/:organizationId/webhook-subscriptions",
     {
@@ -83,13 +88,15 @@ export const webhookRoutes: FastifyPluginAsync<{ db: Db }> = async (app, { db })
         if (!project) throw new ApiError(404, "project_not_found", "Project not found.");
       }
 
+      const id = randomUUID();
       const [created] = await db
         .insert(webhookSubscriptions)
         .values({
+          id,
           organizationId,
           projectId: body.projectId ?? null,
           url: body.url,
-          secret: body.secret,
+          secret: encryptValue(keyring, body.secret, contextFor(id)),
           events: body.events,
           isActive: body.isActive,
         })
