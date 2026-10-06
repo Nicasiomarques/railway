@@ -1,6 +1,7 @@
 import * as k8s from "@kubernetes/client-node";
 import type { BuildRequest, BuildStatus, Builder } from "./builder.js";
 import { detectorSource } from "./detector-source.js";
+import { kubeSystemDnsEgressRule } from "../runtime/environment.js";
 
 // Images pinned by digest (reproducible). Rootless BuildKit runs as user 1000.
 export const GIT_IMAGE = "alpine/git@sha256:062a01ad7a0eb17cff382bc5e26086b4d710e56dfdfdf001109a49b6d9bd378c";
@@ -160,13 +161,7 @@ export class K8sBuilder implements Builder {
         policyTypes: ["Ingress", "Egress"],
         ingress: [],
         egress: [
-          {
-            to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }],
-            ports: [
-              { port: 53, protocol: "UDP" },
-              { port: 53, protocol: "TCP" },
-            ],
-          },
+          kubeSystemDnsEgressRule(),
           { to: [{ ipBlock: { cidr: "0.0.0.0/0", except: PRIVATE_RANGES } }] },
           ...this.cfg.egressAllow.map((a) => ({
             to: [{ ipBlock: { cidr: a.cidr } }],

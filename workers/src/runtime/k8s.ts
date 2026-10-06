@@ -54,14 +54,17 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
       { name: secretName, namespace: spec.namespace, body: secretObject(spec, secretName), ...apply },
       ssa,
     );
-    await this.apps.patchNamespacedDeployment(
-      { name: spec.name, namespace: spec.namespace, body: deploymentObject(spec, hash, secretName), ...apply },
-      ssa,
-    );
-    await this.core.patchNamespacedService(
-      { name: spec.name, namespace: spec.namespace, body: serviceObject(spec), ...apply },
-      ssa,
-    );
+    // Independent objects (the Service only selects by label, it doesn't reference the Deployment): applied concurrently.
+    await Promise.all([
+      this.apps.patchNamespacedDeployment(
+        { name: spec.name, namespace: spec.namespace, body: deploymentObject(spec, hash, secretName), ...apply },
+        ssa,
+      ),
+      this.core.patchNamespacedService(
+        { name: spec.name, namespace: spec.namespace, body: serviceObject(spec), ...apply },
+        ssa,
+      ),
+    ]);
     await this.applyAutoscaler(spec);
   }
 
@@ -108,15 +111,18 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
   async applyDefaultDenyPolicy(namespace: string): Promise<void> {
     const ssa = k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.ServerSideApply);
     const apply = { fieldManager: PROVISIONER_FIELD_MANAGER, force: true };
-    await this.net.patchNamespacedNetworkPolicy({ name: "default-deny", namespace, body: defaultDenyPolicy(namespace), ...apply }, ssa);
-    await this.net.patchNamespacedNetworkPolicy(
-      { name: "workload-ingress", namespace, body: workloadIngressPolicy(namespace), ...apply },
-      ssa,
-    );
-    await this.net.patchNamespacedNetworkPolicy(
-      { name: "workload-egress-dns", namespace, body: workloadEgressDnsPolicy(namespace), ...apply },
-      ssa,
-    );
+    // Three independent NetworkPolicies, same namespace, no ordering requirement between them.
+    await Promise.all([
+      this.net.patchNamespacedNetworkPolicy({ name: "default-deny", namespace, body: defaultDenyPolicy(namespace), ...apply }, ssa),
+      this.net.patchNamespacedNetworkPolicy(
+        { name: "workload-ingress", namespace, body: workloadIngressPolicy(namespace), ...apply },
+        ssa,
+      ),
+      this.net.patchNamespacedNetworkPolicy(
+        { name: "workload-egress-dns", namespace, body: workloadEgressDnsPolicy(namespace), ...apply },
+        ssa,
+      ),
+    ]);
   }
 
   async applyQuota(namespace: string, quota: EnvironmentQuota): Promise<void> {

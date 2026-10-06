@@ -77,28 +77,28 @@ export function workloadIngressPolicy(namespace: string): k8s.V1NetworkPolicy {
   };
 }
 
+// Shared with the build pipeline's own egress policy (build/k8s-builder.ts's applyEgressPolicy):
+// both need the same "let DNS through to CoreDNS in kube-system" rule, so it's defined once here.
+export function kubeSystemDnsEgressRule(): k8s.V1NetworkPolicyEgressRule {
+  return {
+    to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }],
+    ports: [
+      { port: 53, protocol: "UDP" },
+      { port: 53, protocol: "TCP" },
+    ],
+  };
+}
+
 // Without this, default-deny blocks egress entirely, so a workload can't even resolve a Service's
 // DNS name (needed for Connections to reach each other by hostname, same as everything else that
-// isn't a raw IP). Scoped to DNS only, in kube-system, same pattern as the build pipeline's
-// build-egress policy (k8s-builder.ts) -- general outbound internet egress is not opened here.
+// isn't a raw IP). Scoped to DNS only, in kube-system -- general outbound internet egress is not
+// opened here.
 export function workloadEgressDnsPolicy(namespace: string): k8s.V1NetworkPolicy {
   return {
     apiVersion: "networking.k8s.io/v1",
     kind: "NetworkPolicy",
     metadata: { name: "workload-egress-dns", namespace },
-    spec: {
-      podSelector: {},
-      policyTypes: ["Egress"],
-      egress: [
-        {
-          to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }],
-          ports: [
-            { port: 53, protocol: "UDP" },
-            { port: 53, protocol: "TCP" },
-          ],
-        },
-      ],
-    },
+    spec: { podSelector: {}, policyTypes: ["Egress"], egress: [kubeSystemDnsEgressRule()] },
   };
 }
 
