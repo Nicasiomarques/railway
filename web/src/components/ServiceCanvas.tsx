@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CanvasLayout, Connection, Service } from "../api";
 import { useInstanceMetrics } from "./MetricsPanel";
 import { ServiceKindIcon } from "./ServiceKindIcon";
+import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 
 type Pos = { x: number; y: number };
 
@@ -37,6 +38,8 @@ export function ServiceCanvas({
   onConnect,
   onDisconnect,
   onOpenNode,
+  onAddAt,
+  onRedeploy,
 }: {
   projectId: string;
   services: Service[];
@@ -49,11 +52,22 @@ export function ServiceCanvas({
   onConnect: (fromInstanceId: string, toInstanceId: string) => void;
   onDisconnect: (fromInstanceId: string, toInstanceId: string) => void;
   onOpenNode: (node: { serviceId: string; instanceId: string; name: string; kind: string; source: string }) => void;
+  // Right-click on empty canvas: opens the existing "add service" flow, pre-filled and dropped at
+  // this canvas position once created. Omitted entirely hides the background context menu.
+  onAddAt?: (pos: Pos, preset?: { kind: string; source: string }) => void;
+  // Right-click on a node: redeploys the instance from its latest deployment's commit/image, the
+  // same way DeploymentsPanel's "Deploy" button does, just without retyping the reference.
+  onRedeploy?: (instanceId: string) => void;
 }) {
   const [positions, setPositions] = useState<Record<string, Pos>>(layout);
   const [linking, setLinking] = useState<{ fromInstanceId: string; x: number; y: number } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [menu, setMenu] = useState<
+    | { type: "canvas"; x: number; y: number; canvasPos: Pos }
+    | { type: "node"; x: number; y: number; node: Node }
+    | null
+  >(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(
     null,
@@ -99,6 +113,10 @@ export function ServiceCanvas({
   }, []);
 
   function onNodePointerDown(e: React.PointerEvent<HTMLDivElement>, node: Node, index: number) {
+    // Right/middle-click: let onContextMenu (or the browser) handle it instead of starting a
+    // drag/click gesture -- otherwise the contextmenu's own pointerup reads as a left-click here
+    // and opens the inspector at the same time as the context menu.
+    if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const origin = posOf(node, index);
     drag.current = { id: node.serviceId, startX: e.clientX, startY: e.clientY, origX: origin.x, origY: origin.y, moved: false };
@@ -174,6 +192,49 @@ export function ServiceCanvas({
     scheduleSave({});
   }
 
+  function onCanvasContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    if (!onAddAt) return;
+    e.preventDefault();
+    const rect = canvasRef.current!.getBoundingClientRect();
+    setMenu({
+      type: "canvas",
+      x: e.clientX,
+      y: e.clientY,
+      canvasPos: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+    });
+  }
+
+  function onNodeContextMenu(e: React.MouseEvent<HTMLDivElement>, node: Node) {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ type: "node", x: e.clientX, y: e.clientY, node });
+  }
+
+  const canvasMenuItems: ContextMenuItem[] =
+    menu?.type === "canvas"
+      ? [
+          { label: "Add service", onSelect: () => onAddAt!(menu.canvasPos) },
+          { kind: "separator" },
+          { label: "Add database (Postgres)", onSelect: () => onAddAt!(menu.canvasPos, { kind: "postgres", source: "postgres_template" }) },
+          { label: "Add database (Redis)", onSelect: () => onAddAt!(menu.canvasPos, { kind: "redis", source: "redis_template" }) },
+          { label: "Add object storage (MinIO)", onSelect: () => onAddAt!(menu.canvasPos, { kind: "object_storage", source: "minio_template" }) },
+          { kind: "separator" },
+          { label: "Rearrange nodes", onSelect: resetLayout },
+        ]
+      : [];
+
+  const nodeMenuItems: ContextMenuItem[] =
+    menu?.type === "node"
+      ? [
+          { label: "Open", onSelect: () => onOpenNode(menu.node) },
+          ...(onRedeploy
+            ? [{ label: "Redeploy latest", onSelect: () => onRedeploy(menu.node.instanceId), disabled: !canWrite }]
+            : []),
+          { kind: "separator" as const },
+          { label: "Copy instance ID", onSelect: () => navigator.clipboard?.writeText(menu.node.instanceId) },
+        ]
+      : [];
+
   const visibleConnections = connections.filter(
     (c) => indexOfInstance.has(c.fromInstanceId) && indexOfInstance.has(c.toInstanceId),
   );
@@ -185,8 +246,8 @@ export function ServiceCanvas({
       <div className="canvas-toolbar">
         <span className="muted">
           {canWrite
-            ? "Clique num node para ver detalhes. Arraste para reorganizar, ou o ponto à direita para conectar."
-            : "Clique num node para ver detalhes."}
+            ? "Clique num node para ver detalhes. Arraste para reorganizar, ou o ponto à direita para conectar. Clique com o botão direito para mais opções."
+            : "Clique num node para ver detalhes. Clique com o botão direito para mais opções."}
         </span>
         <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {saving && (
@@ -202,7 +263,7 @@ export function ServiceCanvas({
         </span>
       </div>
 
-      <div className="canvas" ref={canvasRef} style={{ height }}>
+      <div className="canvas" ref={canvasRef} style={{ height }} onContextMenu={onCanvasContextMenu}>
         <svg className="links" width="100%" height="100%">
           {visibleConnections.map((c) => {
             const from = center(c.fromInstanceId, "right")!;
@@ -239,6 +300,7 @@ export function ServiceCanvas({
               onPointerMove={onNodePointerMove}
               onPointerUp={() => onNodePointerUp(n)}
               onPointerCancel={onNodePointerCancel}
+              onContextMenu={(e) => onNodeContextMenu(e, n)}
               onPortPointerDown={(e) => onPortPointerDown(e, n.instanceId)}
               onPortPointerMove={onPortPointerMove}
               onPortPointerUp={onPortPointerUp}
@@ -247,6 +309,15 @@ export function ServiceCanvas({
           );
         })}
       </div>
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menu.type === "canvas" ? canvasMenuItems : nodeMenuItems}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -263,6 +334,7 @@ function CanvasNode({
   onPointerMove,
   onPointerUp,
   onPointerCancel,
+  onContextMenu,
   onPortPointerDown,
   onPortPointerMove,
   onPortPointerUp,
@@ -277,6 +349,7 @@ function CanvasNode({
   onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPointerUp: () => void;
   onPointerCancel: () => void;
+  onContextMenu: (e: React.MouseEvent<HTMLDivElement>) => void;
   onPortPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPortPointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
   onPortPointerUp: (e: React.PointerEvent<HTMLDivElement>) => void;
@@ -300,6 +373,7 @@ function CanvasNode({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onContextMenu={onContextMenu}
     >
       <div className="node-top">
         <span className="node-name">

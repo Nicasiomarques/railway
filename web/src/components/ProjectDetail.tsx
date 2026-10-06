@@ -1,12 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { api, ApiProblem, type CanvasLayout, type Connection, type Environment, type Service } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiProblem, type CanvasLayout, type Connection, type Deployment, type Environment, type Service } from "../api";
 import { ServiceCanvas } from "./ServiceCanvas";
 import { ServiceInspector } from "./ServiceInspector";
 import { ServiceKindIcon } from "./ServiceKindIcon";
 
 const KINDS = ["web", "worker", "postgres", "redis", "object_storage"] as const;
-const SOURCES = ["github_repo", "image", "template", "minio_template"] as const;
+const SOURCES = ["github_repo", "image", "template", "postgres_template", "redis_template", "minio_template"] as const;
 
 type OpenNode = { serviceId: string; instanceId: string; name: string; kind: string; source: string };
 
@@ -26,6 +26,10 @@ export function ProjectDetail({
   const [environment, setEnvironment] = useState<string | null>(null);
   const [open, setOpen] = useState<OpenNode | null>(null);
   const [servicesOpen, setServicesOpen] = useState(false);
+  // Set when "Add ..." is picked from the canvas's right-click menu: the next service created
+  // through the form below lands at this canvas position instead of the default grid slot.
+  const pendingPosRef = useRef<{ x: number; y: number } | null>(null);
+  const addFormRef = useRef<HTMLFormElement>(null);
 
   const environments = useQuery({
     queryKey: ["environments", projectId],
@@ -89,7 +93,7 @@ export function ProjectDetail({
     e.preventDefault();
     setError(null);
     try {
-      await api(`/projects/${projectId}/services`, {
+      const created = await api<Service>(`/projects/${projectId}/services`, {
         method: "POST",
         headers: { "idempotency-key": crypto.randomUUID() },
         json: { name: form.name, kind: form.kind, source: form.source },
@@ -97,8 +101,48 @@ export function ProjectDetail({
       setForm({ ...form, name: "" });
       setAddingService(false);
       queryClient.invalidateQueries({ queryKey: ["services", projectId] });
+      // Dropped from the canvas's "Add..." context menu: place the new node where the user
+      // right-clicked instead of leaving it at the default grid slot.
+      if (pendingPosRef.current && canvasLayout.data) {
+        await saveLayout({ ...canvasLayout.data, [created.id]: pendingPosRef.current });
+      }
     } catch (err) {
       setError(err instanceof ApiProblem ? err.message : "Error creating service.");
+    } finally {
+      pendingPosRef.current = null;
+    }
+  }
+
+  // Background right-click on the canvas: opens the existing "Add service" disclosure, pre-filled
+  // when a quick database/storage pick was chosen, and remembers where to drop the new node.
+  function addAt(pos: { x: number; y: number }, preset?: { kind: string; source: string }) {
+    setError(null);
+    pendingPosRef.current = pos;
+    setForm((f) => ({ name: "", kind: preset?.kind ?? f.kind, source: preset?.source ?? f.source }));
+    setServicesOpen(true);
+    setAddingService(true);
+    requestAnimationFrame(() => addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
+
+  // Right-click "Redeploy latest" on a node: reuses the same POST .../deployments the Deployments
+  // tab's "Deploy" button calls, just supplying the previous deployment's own commit/image instead
+  // of asking the user to retype it.
+  async function redeployLatest(instanceId: string) {
+    setError(null);
+    try {
+      const [latest] = await api<{ data: Deployment[] }>(`/services/${instanceId}/deployments?limit=1`).then((r) => r.data);
+      if (!latest) {
+        setError("This service has no deployments yet — deploy it from the Deployments tab first.");
+        return;
+      }
+      await api(`/services/${instanceId}/deployments`, {
+        method: "POST",
+        headers: { "idempotency-key": crypto.randomUUID() },
+        json: latest.commitSha ? { commitSha: latest.commitSha } : { imageDigest: latest.imageDigest },
+      });
+      queryClient.invalidateQueries({ queryKey: ["deployments", instanceId] });
+    } catch (err) {
+      setError(err instanceof ApiProblem ? err.message : "Error redeploying.");
     }
   }
 
@@ -138,6 +182,8 @@ export function ProjectDetail({
           onConnect={connect}
           onDisconnect={disconnect}
           onOpenNode={setOpen}
+          onAddAt={canWrite ? addAt : undefined}
+          onRedeploy={canWrite ? redeployLatest : undefined}
         />
       )}
 
@@ -196,7 +242,7 @@ export function ProjectDetail({
                   + Add service
                 </button>
               ) : (
-                <form className="disclose-body inline wrap" onSubmit={createService}>
+                <form ref={addFormRef} className="disclose-body inline wrap" onSubmit={createService}>
                   <input
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -216,7 +262,14 @@ export function ProjectDetail({
                   <button type="submit" disabled={!form.name.trim()}>
                     Create
                   </button>
-                  <button type="button" className="ghost" onClick={() => setAddingService(false)}>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => {
+                      pendingPosRef.current = null;
+                      setAddingService(false);
+                    }}
+                  >
                     Cancel
                   </button>
                 </form>
