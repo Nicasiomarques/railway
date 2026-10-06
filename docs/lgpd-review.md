@@ -10,17 +10,17 @@
 
 ## 1. What personal data exists today, and where
 
-| Data | Table / field | Purpose | Notes |
-|---|---|---|---|
-| Email | `users.email` | Identity (login) | The *only* identity the platform has — see §3 below, this is also a security finding. |
-| Name, Browse/IP metadata | — | — | Not collected: there's no "name" field on `users`, and request IPs are used only transiently by the rate limiter (`@fastify/rate-limit`), never persisted. |
-| Git author name/commit SHA/branch | `deployments.author`, `.commitSha`, `.branch` | Shown in the deployments UI, deployment-to-commit linking (architecture.md §8) | `author` is free text pulled from the commit, not validated against the logged-in user — it's whoever's name/email git shows for that commit, which can be a third party who never signed up. |
-| GitHub identity | `github_repo_links.installationId`, webhook payloads | GitHub App integration | Installation-scoped, not a personal GitHub account; webhook payloads (`github_webhook_deliveries`) can carry a committer's GitHub login/email as part of the raw payload — see §2. |
-| Who did what, when | `audit_logs.actorId` (→ `users.id`), `.action`, `.target`, `.metadata` | Accountability | Append-only, no documented retention/purge (see §4). |
-| Variable values | `variables.value_enc` | App configuration | Envelope-encrypted (`api/src/crypto/envelope.ts`); becomes personal data only if a customer *puts* personal data in a variable (e.g. a customer's own users' emails in a connection string) — the platform has no visibility into or control over that. |
-| Runtime/build logs | Not yet persisted anywhere (`docs/slos.md`: "No log pipeline") | Debugging | Today's logs only exist transiently (`kubectl logs`, CI output) — nothing durable to apply a retention policy to yet, which is a gap in the other direction (§4). |
-| Usage samples | `usage_events` | Future billing (architecture.md §3/§4) | Keyed by project/service, not directly by user. |
-| Billing | `invoices`, `invoice_line_items`, `organization_subscriptions` | Billing | No separate "billing contact" personal data beyond the organization relationship — no payment card data stored (architecture.md doesn't describe a payment processor integration yet either). |
+| Data                              | Table / field                                                          | Purpose                                                                        | Notes                                                                                                                                                                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Email                             | `users.email`                                                          | Identity (login)                                                               | The _only_ identity the platform has — see §3 below, this is also a security finding.                                                                                                                                                                   |
+| Name, Browse/IP metadata          | —                                                                      | —                                                                              | Not collected: there's no "name" field on `users`, and request IPs are used only transiently by the rate limiter (`@fastify/rate-limit`), never persisted.                                                                                              |
+| Git author name/commit SHA/branch | `deployments.author`, `.commitSha`, `.branch`                          | Shown in the deployments UI, deployment-to-commit linking (architecture.md §8) | `author` is free text pulled from the commit, not validated against the logged-in user — it's whoever's name/email git shows for that commit, which can be a third party who never signed up.                                                           |
+| GitHub identity                   | `github_repo_links.installationId`, webhook payloads                   | GitHub App integration                                                         | Installation-scoped, not a personal GitHub account; webhook payloads (`github_webhook_deliveries`) can carry a committer's GitHub login/email as part of the raw payload — see §2.                                                                      |
+| Who did what, when                | `audit_logs.actorId` (→ `users.id`), `.action`, `.target`, `.metadata` | Accountability                                                                 | Append-only, no documented retention/purge (see §4).                                                                                                                                                                                                    |
+| Variable values                   | `variables.value_enc`                                                  | App configuration                                                              | Envelope-encrypted (`api/src/crypto/envelope.ts`); becomes personal data only if a customer _puts_ personal data in a variable (e.g. a customer's own users' emails in a connection string) — the platform has no visibility into or control over that. |
+| Runtime/build logs                | Not yet persisted anywhere (`docs/slos.md`: "No log pipeline")         | Debugging                                                                      | Today's logs only exist transiently (`kubectl logs`, CI output) — nothing durable to apply a retention policy to yet, which is a gap in the other direction (§4).                                                                                       |
+| Usage samples                     | `usage_events`                                                         | Future billing (architecture.md §3/§4)                                         | Keyed by project/service, not directly by user.                                                                                                                                                                                                         |
+| Billing                           | `invoices`, `invoice_line_items`, `organization_subscriptions`         | Billing                                                                        | No separate "billing contact" personal data beyond the organization relationship — no payment card data stored (architecture.md doesn't describe a payment processor integration yet either).                                                           |
 
 ## 2. Data flows worth naming explicitly
 
@@ -38,7 +38,7 @@
 ## 3. Security finding directly relevant to LGPD (Art. 46, security measures)
 
 **Login is email-only, with no verification** (`api/src/auth/local.ts`, `api/src/routes/auth.ts`):
-`POST /v1/auth/login` with *any* email creates-or-finds that user and issues a valid API token —
+`POST /v1/auth/login` with _any_ email creates-or-finds that user and issues a valid API token —
 no password, magic link, or OTP. Anyone who knows (or guesses) a user's email can log in as them
 and reach everything in that organization. This is explicitly flagged in the code as an MVP stand-in
 (architecture.md: "External provider in the MVP" for Auth; roadmap.md Phase 0: "Out of scope for
@@ -59,7 +59,7 @@ verified login flow, before anything in §5's recommendations matters).
   than being purged after a grace period.
 - **Rectification**: no endpoint to change a user's own email once set.
 - **Retention limits**: nothing expires `audit_logs`, `usage_events`, `deployment_events`, or
-  `github_webhook_deliveries` — architecture.md §9 mentions "Retention by plan" for *logs*
+  `github_webhook_deliveries` — architecture.md §9 mentions "Retention by plan" for _logs_
   specifically (which, per §1 above, aren't persisted yet at all), but nothing in the schema or
   workers enforces a retention window on the tables that already exist and already accumulate.
 
@@ -86,7 +86,7 @@ in practice, not an independent nice-to-have.
    pattern for projects/services) before this is needed for a real request.
 5. **Write the actual Privacy Policy / Terms of Service** — see the outline below — and decide
    where/how a user accepts them (there's no acceptance flow or stored consent today; `POST
-   /v1/auth/login` creates a user with no terms-acceptance step at all).
+/v1/auth/login` creates a user with no terms-acceptance step at all).
 
 ## 7. Terms of Service / Privacy Policy — starting outline (not legal text)
 
@@ -94,6 +94,7 @@ This is a section list to hand to counsel, built from what the previous sections
 wording to publish as-is.
 
 **Terms of Service**
+
 - Service description and acceptable use (ties to `architecture.md` §12 #12, abuse).
 - Account eligibility and the (to-be-fixed) authentication requirement.
 - Customer data: who owns data a customer stores in variables/volumes (the customer, with the
@@ -103,6 +104,7 @@ wording to publish as-is.
 - Termination and data deletion on account closure (ties to §4's missing erasure path).
 
 **Privacy Policy**
+
 - What's collected: §1's table, in plain language.
 - Why (legal basis per LGPD Art. 7): account email — contract performance; audit logs — legitimate
   interest/security; usage events — contract performance (future billing).

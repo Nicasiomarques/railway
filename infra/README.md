@@ -4,14 +4,15 @@ Manual setup until a `docker-compose` and CI exist. Everything below runs on Doc
 
 ## Services
 
-| Service | How to start it | Host port |
-|---|---|---|
-| Postgres | local install (Homebrew) | 5432 |
-| Redis | `docker run -d --name railway-redis -p 6379:6379 redis:7-alpine` | 6379 |
-| k3s cluster | `k3d cluster create railway-dev --agents 1 --registry-use k3d-railway-reg:5000 --wait` | — |
-| Registry | `k3d registry create railway-reg --port 5050` | 5050 |
+| Service     | How to start it                                                                        | Host port |
+| ----------- | -------------------------------------------------------------------------------------- | --------- |
+| Postgres    | local install (Homebrew)                                                               | 5432      |
+| Redis       | `docker run -d --name railway-redis -p 6379:6379 redis:7-alpine`                       | 6379      |
+| k3s cluster | `k3d cluster create railway-dev --agents 1 --registry-use k3d-railway-reg:5000 --wait` | —         |
+| Registry    | `k3d registry create railway-reg --port 5050`                                          | 5050      |
 
 Notes:
+
 - Port 5000 is often taken on macOS (AirPlay). That's why the registry uses 5050 on the host.
 - Inside the cluster, the registry is `k3d-railway-reg:5000` (that's what the nodes pull from and what the build publishes to).
 - From the host, the same registry is `localhost:5050`.
@@ -82,6 +83,7 @@ Details and what still requires concessions: `infra/spike/gvisor/README.md`.
 Verified on k3d with `K8S_TEST_CONTEXT=k3d-railway-dev`: a workload with no `resources` comes up inside the environment with the LimitRange's defaults.
 
 Not wired up yet:
+
 - No API route creates environments, and nothing enqueues the job. Today the environment only comes in through the seed.
 - The reconciler doesn't wait for the saga to finish: a workload can get applied before the namespace has its policies.
 - The egress policy denies DNS and the internet. Allowances (DNS, edge, traffic between services, egress) don't exist yet; an app that resolves external names hasn't been tested in this state.

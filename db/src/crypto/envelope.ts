@@ -26,11 +26,15 @@ export type Keyring = {
 };
 
 // ENCRYPTION_KEYS="kid1:<base64>,kid2:<base64>"  ENCRYPTION_CURRENT_KID=kid2
-export function loadKeyringFromEnv(env: NodeJS.ProcessEnv = process.env): Keyring {
+export function loadKeyringFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Keyring {
   const raw = env.ENCRYPTION_KEYS;
   const currentKid = env.ENCRYPTION_CURRENT_KID;
   if (!raw || !currentKid) {
-    throw new CryptoError("ENCRYPTION_KEYS and ENCRYPTION_CURRENT_KID are required.");
+    throw new CryptoError(
+      "ENCRYPTION_KEYS and ENCRYPTION_CURRENT_KID are required.",
+    );
   }
 
   const keys = new Map<string, Buffer>();
@@ -38,12 +42,15 @@ export function loadKeyringFromEnv(env: NodeJS.ProcessEnv = process.env): Keyrin
     const [kid, b64] = entry.split(":");
     if (!kid || !b64) throw new CryptoError("ENCRYPTION_KEYS is malformed.");
     const key = Buffer.from(b64, "base64");
-    if (key.length !== KEY_BYTES) throw new CryptoError(`Key ${kid} must be ${KEY_BYTES} bytes.`);
+    if (key.length !== KEY_BYTES)
+      throw new CryptoError(`Key ${kid} must be ${KEY_BYTES} bytes.`);
     keys.set(kid, key);
   }
 
   if (!keys.has(currentKid)) {
-    throw new CryptoError("ENCRYPTION_CURRENT_KID does not exist in ENCRYPTION_KEYS.");
+    throw new CryptoError(
+      "ENCRYPTION_CURRENT_KID does not exist in ENCRYPTION_KEYS.",
+    );
   }
   return { currentKid, keys };
 }
@@ -63,7 +70,10 @@ function open(key: Buffer, sealed: Sealed, aad: Buffer): Buffer {
   decipher.setAAD(aad);
   decipher.setAuthTag(sealed.tag);
   try {
-    return Buffer.concat([decipher.update(sealed.ciphertext), decipher.final()]);
+    return Buffer.concat([
+      decipher.update(sealed.ciphertext),
+      decipher.final(),
+    ]);
   } catch {
     // Generic message: don't reveal whether it was the wrong key, wrong context, or tampered data.
     throw new CryptoError("Failed to decrypt value.");
@@ -77,11 +87,19 @@ function dekAad(kid: string, context: string): Buffer {
   return Buffer.from(`dek:${kid}:${context}`);
 }
 
-export function encryptValue(keyring: Keyring, plaintext: string, context: string): string {
+export function encryptValue(
+  keyring: Keyring,
+  plaintext: string,
+  context: string,
+): string {
   const kek = keyring.keys.get(keyring.currentKid)!;
   const dek = randomBytes(KEY_BYTES);
   try {
-    const value = seal(dek, Buffer.from(plaintext, "utf8"), Buffer.from(context));
+    const value = seal(
+      dek,
+      Buffer.from(plaintext, "utf8"),
+      Buffer.from(context),
+    );
     const wrapped = seal(kek, dek, dekAad(keyring.currentKid, context));
     return [
       VERSION,
@@ -98,7 +116,11 @@ export function encryptValue(keyring: Keyring, plaintext: string, context: strin
   }
 }
 
-export function decryptValue(keyring: Keyring, payload: string, context: string): string {
+export function decryptValue(
+  keyring: Keyring,
+  payload: string,
+  context: string,
+): string {
   const parts = payload.split(".");
   if (parts.length !== 8 || parts[0] !== VERSION) {
     throw new CryptoError("Invalid encrypted payload format.");
@@ -106,7 +128,8 @@ export function decryptValue(keyring: Keyring, payload: string, context: string)
   const [, kid, wIv, wCt, wTag, iv, ct, tag] = parts;
 
   const kek = keyring.keys.get(kid);
-  if (!kek) throw new CryptoError(`Key ${kid} is not available in the keyring.`);
+  if (!kek)
+    throw new CryptoError(`Key ${kid} is not available in the keyring.`);
 
   const dek = open(
     kek,
@@ -114,7 +137,11 @@ export function decryptValue(keyring: Keyring, payload: string, context: string)
     dekAad(kid, context),
   );
   try {
-    const value = open(dek, { iv: unb64(iv), ciphertext: unb64(ct), tag: unb64(tag) }, Buffer.from(context));
+    const value = open(
+      dek,
+      { iv: unb64(iv), ciphertext: unb64(ct), tag: unb64(tag) },
+      Buffer.from(context),
+    );
     return value.toString("utf8");
   } finally {
     dek.fill(0);
