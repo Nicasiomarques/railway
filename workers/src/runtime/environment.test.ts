@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ENV_QUOTA, defaultDenyPolicy, limitRangeObject, resourceQuotaObject } from "./environment.js";
+import {
+  DEFAULT_ENV_QUOTA,
+  defaultDenyPolicy,
+  limitRangeObject,
+  resourceQuotaObject,
+  workloadEgressDnsPolicy,
+  workloadIngressPolicy,
+} from "./environment.js";
 
 describe("environment manifests", () => {
   it("default-deny denies ingress and egress for every pod in the namespace", () => {
@@ -7,6 +14,36 @@ describe("environment manifests", () => {
 
     expect(policy.metadata).toEqual({ name: "default-deny", namespace: "env-x" });
     expect(policy.spec).toEqual({ podSelector: {}, policyTypes: ["Ingress", "Egress"] });
+  });
+
+  it("workload-ingress allows traffic to the workload port from any source, for every pod in the namespace", () => {
+    const policy = workloadIngressPolicy("env-x");
+
+    expect(policy.metadata).toEqual({ name: "workload-ingress", namespace: "env-x" });
+    expect(policy.spec).toEqual({
+      podSelector: {},
+      policyTypes: ["Ingress"],
+      ingress: [{ ports: [{ port: 8080, protocol: "TCP" }] }],
+    });
+  });
+
+  it("workload-egress-dns allows only DNS to kube-system, for every pod in the namespace", () => {
+    const policy = workloadEgressDnsPolicy("env-x");
+
+    expect(policy.metadata).toEqual({ name: "workload-egress-dns", namespace: "env-x" });
+    expect(policy.spec).toEqual({
+      podSelector: {},
+      policyTypes: ["Egress"],
+      egress: [
+        {
+          to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }],
+          ports: [
+            { port: 53, protocol: "UDP" },
+            { port: 53, protocol: "TCP" },
+          ],
+        },
+      ],
+    });
   });
 
   it("quota converts the limits to strings and pods to a numeric string", () => {

@@ -1,17 +1,18 @@
 import { PassThrough } from "node:stream";
 import * as k8s from "@kubernetes/client-node";
-import { specHash, type RuntimeAdapter, type WorkloadRef, type WorkloadSpec, type WorkloadStatus } from "./adapter.js";
+import { CONTAINER_PORT, specHash, type RuntimeAdapter, type WorkloadRef, type WorkloadSpec, type WorkloadStatus } from "./adapter.js";
 import {
   defaultDenyPolicy,
   limitRangeObject,
   PROVISIONER_FIELD_MANAGER,
   resourceQuotaObject,
+  workloadEgressDnsPolicy,
+  workloadIngressPolicy,
   type EnvironmentQuota,
   type EnvironmentRuntime,
 } from "./environment.js";
 
-// Port the app listens on. Fixed at this stage: the service contract doesn't have a configurable port yet.
-export const CONTAINER_PORT = 8080;
+export { CONTAINER_PORT };
 
 // All objects are applied with server-side apply under the same field manager: applying again is idempotent
 // and fields removed from the spec leave the cluster.
@@ -57,6 +58,10 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
       { name: spec.name, namespace: spec.namespace, body: deploymentObject(spec, hash, secretName), ...apply },
       ssa,
     );
+    await this.core.patchNamespacedService(
+      { name: spec.name, namespace: spec.namespace, body: serviceObject(spec), ...apply },
+      ssa,
+    );
     await this.applyAutoscaler(spec);
   }
 
@@ -95,11 +100,21 @@ export class K8sRuntime implements RuntimeAdapter, EnvironmentRuntime {
     await this.core.patchNamespace({ name: namespace, body, fieldManager: PROVISIONER_FIELD_MANAGER, force: true }, ssa);
   }
 
+  // Applies the full network policy set for the environment, not just the deny: a bare default-deny
+  // would leave every workload unreachable (no ingress) and unable to resolve DNS (no egress), so the
+  // allowances the comment on defaultDenyPolicy promises ("come later, via their own policy") are
+  // applied right here, same field manager, same call site (the provisioning saga calls this once
+  // per environment -- see provisioning/saga.ts).
   async applyDefaultDenyPolicy(namespace: string): Promise<void> {
     const ssa = k8s.setHeaderOptions("Content-Type", k8s.PatchStrategy.ServerSideApply);
-    const body = defaultDenyPolicy(namespace);
+    const apply = { fieldManager: PROVISIONER_FIELD_MANAGER, force: true };
+    await this.net.patchNamespacedNetworkPolicy({ name: "default-deny", namespace, body: defaultDenyPolicy(namespace), ...apply }, ssa);
     await this.net.patchNamespacedNetworkPolicy(
-      { name: "default-deny", namespace, body, fieldManager: PROVISIONER_FIELD_MANAGER, force: true },
+      { name: "workload-ingress", namespace, body: workloadIngressPolicy(namespace), ...apply },
+      ssa,
+    );
+    await this.net.patchNamespacedNetworkPolicy(
+      { name: "workload-egress-dns", namespace, body: workloadEgressDnsPolicy(namespace), ...apply },
       ssa,
     );
   }
@@ -256,6 +271,22 @@ function deploymentObject(spec: WorkloadSpec, hash: string, secretName: string):
           volumes: [{ name: "tmp", emptyDir: {} }],
         },
       },
+    },
+  };
+}
+
+// ClusterIP: reachable from other pods (Connections, same-namespace calls) and from `kubectl
+// port-forward` without any ingress controller or public DNS -- enough to validate "ver no ar"
+// fully offline. A real external route (NodePort/LoadBalancer/Ingress + DNS/TLS) is a separate,
+// later concern (the domain/edge feature), not this adapter's job.
+function serviceObject(spec: WorkloadSpec): k8s.V1Service {
+  return {
+    apiVersion: "v1",
+    kind: "Service",
+    metadata: { name: spec.name, namespace: spec.namespace, labels: { [LABEL_WORKLOAD]: spec.name } },
+    spec: {
+      selector: { [LABEL_WORKLOAD]: spec.name },
+      ports: [{ port: CONTAINER_PORT, targetPort: CONTAINER_PORT, protocol: "TCP" }],
     },
   };
 }
