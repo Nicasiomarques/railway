@@ -76,7 +76,11 @@ function runtimeWithPods(items: k8s.V1Pod[]): { runtime: K8sRuntime; listNamespa
 // resolves them -- so a call lands on the fake the real client would have routed it to.
 // No real cluster; that's k8s.integration.test.ts's job.
 function runtimeForApply() {
-  const core = { patchNamespace: vi.fn().mockResolvedValue({}), patchNamespacedSecret: vi.fn().mockResolvedValue({}) };
+  const core = {
+    patchNamespace: vi.fn().mockResolvedValue({}),
+    patchNamespacedSecret: vi.fn().mockResolvedValue({}),
+    patchNamespacedService: vi.fn().mockResolvedValue({}),
+  };
   const apps = { patchNamespacedDeployment: vi.fn().mockResolvedValue({}) };
   const autoscalingApi = {
     patchNamespacedHorizontalPodAutoscaler: vi.fn().mockResolvedValue({}),
@@ -149,6 +153,47 @@ describe("K8sRuntime.applyWorkload autoscaling", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe("K8sRuntime.applyWorkload Service", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("applies a ClusterIP Service selecting the workload's pods on the container port", async () => {
+    const { runtime, core } = runtimeForApply();
+
+    await runtime.applyWorkload({ name: "wl-1", namespace: "env-ns", image: "img@sha256:a", env: {}, replicas: 2 });
+
+    expect(core.patchNamespacedService).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "wl-1",
+        namespace: "env-ns",
+        body: expect.objectContaining({
+          kind: "Service",
+          spec: {
+            selector: { "platform/workload": "wl-1" },
+            ports: [{ port: 8080, targetPort: 8080, protocol: "TCP" }],
+          },
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("K8sRuntime.applyDefaultDenyPolicy", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("applies default-deny, workload-ingress and workload-egress-dns in the namespace", async () => {
+    const patchNamespacedNetworkPolicy = vi.fn().mockResolvedValue({});
+    const kubeconfig = { makeApiClient: () => ({ patchNamespacedNetworkPolicy }) } as unknown as k8s.KubeConfig;
+    const runtime = new K8sRuntime(kubeconfig);
+
+    await runtime.applyDefaultDenyPolicy("env-ns");
+
+    const names = patchNamespacedNetworkPolicy.mock.calls.map((call) => call[0].name);
+    expect(names).toEqual(["default-deny", "workload-ingress", "workload-egress-dns"]);
+    expect(patchNamespacedNetworkPolicy.mock.calls.every((call) => call[0].namespace === "env-ns")).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import type * as k8s from "@kubernetes/client-node";
+import { CONTAINER_PORT } from "./adapter.js";
 
 // Port for provisioning an environment's namespace (architecture.md §6). Separate from RuntimeAdapter:
 // only the provisioning saga calls this interface. Each operation is an idempotent upsert.
@@ -43,13 +44,61 @@ export function environmentLabels(projectId: string, environmentId: string): Rec
   };
 }
 
-// Denies all ingress and egress for the namespace. Allowances (edge, inter-service traffic, internet) come later, via their own policy.
+// Denies all ingress and egress for the namespace. Combined with workloadIngressPolicy and
+// workloadEgressDnsPolicy below (NetworkPolicies are additive: a packet is let through if any
+// policy selecting the pod allows it), not a blanket deny -- those two carve out exactly what a
+// workload needs to be reachable and to resolve names. General internet egress (outbound calls
+// from the workload itself) is a separate, still-open decision -- not added here.
 export function defaultDenyPolicy(namespace: string): k8s.V1NetworkPolicy {
   return {
     apiVersion: "networking.k8s.io/v1",
     kind: "NetworkPolicy",
     metadata: { name: "default-deny", namespace },
     spec: { podSelector: {}, policyTypes: ["Ingress", "Egress"] },
+  };
+}
+
+// Lets traffic reach any workload in the namespace on the port it listens on: from another pod in
+// the same namespace (Connections between service instances) and from `kubectl port-forward` or a
+// NodePort/LoadBalancer Service (no ingress controller required) -- enough to validate a deployment
+// is actually reachable with no public DNS/TLS/internet involved. Not scoped to a source, by design:
+// there is no edge/ingress controller in this cluster yet to scope it to (that's the domain/edge
+// feature, still to come) -- scoping ingress to it is a Fase B follow-up once it exists.
+export function workloadIngressPolicy(namespace: string): k8s.V1NetworkPolicy {
+  return {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "NetworkPolicy",
+    metadata: { name: "workload-ingress", namespace },
+    spec: {
+      podSelector: {},
+      policyTypes: ["Ingress"],
+      ingress: [{ ports: [{ port: CONTAINER_PORT, protocol: "TCP" }] }],
+    },
+  };
+}
+
+// Shared with the build pipeline's own egress policy (build/k8s-builder.ts's applyEgressPolicy):
+// both need the same "let DNS through to CoreDNS in kube-system" rule, so it's defined once here.
+export function kubeSystemDnsEgressRule(): k8s.V1NetworkPolicyEgressRule {
+  return {
+    to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } } }],
+    ports: [
+      { port: 53, protocol: "UDP" },
+      { port: 53, protocol: "TCP" },
+    ],
+  };
+}
+
+// Without this, default-deny blocks egress entirely, so a workload can't even resolve a Service's
+// DNS name (needed for Connections to reach each other by hostname, same as everything else that
+// isn't a raw IP). Scoped to DNS only, in kube-system -- general outbound internet egress is not
+// opened here.
+export function workloadEgressDnsPolicy(namespace: string): k8s.V1NetworkPolicy {
+  return {
+    apiVersion: "networking.k8s.io/v1",
+    kind: "NetworkPolicy",
+    metadata: { name: "workload-egress-dns", namespace },
+    spec: { podSelector: {}, policyTypes: ["Egress"], egress: [kubeSystemDnsEgressRule()] },
   };
 }
 

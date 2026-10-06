@@ -60,6 +60,15 @@ describe.skipIf(!CONTEXT)("environment provisioning on the cluster", () => {
     const policy = await net.readNamespacedNetworkPolicy({ name: "default-deny", namespace });
     expect(policy.spec?.policyTypes).toEqual(["Ingress", "Egress"]);
 
+    const ingressAllow = await net.readNamespacedNetworkPolicy({ name: "workload-ingress", namespace });
+    expect(ingressAllow.spec?.ingress).toEqual([{ ports: [{ port: 8080, protocol: "TCP" }] }]);
+
+    const egressDns = await net.readNamespacedNetworkPolicy({ name: "workload-egress-dns", namespace });
+    expect(egressDns.spec?.egress?.[0]?.ports).toEqual([
+      { port: 53, protocol: "UDP" },
+      { port: 53, protocol: "TCP" },
+    ]);
+
     const quota = await core.readNamespacedResourceQuota({ name: "env-quota", namespace });
     expect(quota.spec?.hard).toMatchObject({ pods: "20", "limits.memory": "8Gi" });
 
@@ -78,12 +87,72 @@ describe.skipIf(!CONTEXT)("environment provisioning on the cluster", () => {
     expect(pod.spec?.containers[0]?.resources?.limits).toEqual({ cpu: "500m", memory: "512Mi" });
   }, 200_000);
 
+  // This is the actual "ver no ar" proof: a client with no special network standing -- a plain pod
+  // in a different namespace, no port-forward, no kubeconfig magic -- reaches the workload's
+  // Service by DNS name. If workload-ingress (or the Service itself) were missing, this would hang
+  // until curl's own timeout and the test would fail, not silently pass.
+  it("the workload's Service is reachable from a pod in another namespace, by DNS name", async () => {
+    const clientNamespace = `client-${suffix}`;
+    const clientPodName = `curl-${suffix}`;
+    await core.createNamespace({ body: { metadata: { name: clientNamespace } } });
+
+    try {
+      await core.createNamespacedPod({
+        namespace: clientNamespace,
+        body: {
+          metadata: { name: clientPodName },
+          spec: {
+            restartPolicy: "Never",
+            containers: [
+              {
+                name: "curl",
+                image: "curlimages/curl:8.10.1",
+                command: [
+                  "curl",
+                  "-s",
+                  "-o",
+                  "/dev/null",
+                  "-w",
+                  "%{http_code}",
+                  "--max-time",
+                  "5",
+                  `http://${name}.${namespace}.svc.cluster.local:8080/`,
+                ],
+              },
+            ],
+          },
+        },
+      });
+
+      await waitFor(
+        async () => {
+          const pod = await core.readNamespacedPod({ name: clientPodName, namespace: clientNamespace });
+          const phase = pod.status?.phase;
+          return phase === "Succeeded" || phase === "Failed" ? phase : null;
+        },
+        60_000,
+        "curl pod to finish",
+      );
+
+      const log = await core.readNamespacedPodLog({ name: clientPodName, namespace: clientNamespace });
+      // nginx-unprivileged answers 200 on `/`; any HTTP status at all means the TCP connection -- and
+      // therefore the Service and the NetworkPolicy allow -- actually worked.
+      expect(log).toMatch(/^\d{3}$/);
+    } finally {
+      await core.deleteNamespace({ name: clientNamespace }).catch(() => undefined);
+    }
+  }, 90_000);
+
   it("re-applying the saga is idempotent", async () => {
     await runtime.ensureNamespace(namespace, environmentLabels("proj-int", environmentId));
     await runtime.applyDefaultDenyPolicy(namespace);
     await runtime.applyQuota(namespace, DEFAULT_ENV_QUOTA);
 
     const policies = await net.listNamespacedNetworkPolicy({ namespace });
-    expect(policies.items.map((p) => p.metadata?.name)).toEqual(["default-deny"]);
+    expect(policies.items.map((p) => p.metadata?.name).sort()).toEqual([
+      "default-deny",
+      "workload-egress-dns",
+      "workload-ingress",
+    ]);
   });
 });

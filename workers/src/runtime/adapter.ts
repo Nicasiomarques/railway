@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 // Runtime port (architecture.md §3). Only the reconciler calls this interface.
 // Implementations: InMemoryRuntime (tests) and K8sRuntime (k3s).
 
+// Port the app listens on. Fixed at this stage: the service contract doesn't have a configurable port yet.
+// Shared between k8s.ts (Deployment/Service) and environment.ts (the NetworkPolicy allowing traffic to it).
+export const CONTAINER_PORT = 8080;
+
 // Autoscaling (roadmap.md Phase 4). When present on a WorkloadSpec, the runtime is expected to
 // hand control of the workload's replica count to this policy instead of the spec's own
 // `replicas` field (see K8sRuntime.applyWorkload: with a policy, the Deployment's `spec.replicas`
